@@ -45,3 +45,6 @@ Thumbs.db
 
 # ===== CACHE NICEGUI =====
 .nicegui/
+
+# prueba de clon (red de seguridad local)
+archivos_antes_prueba/
