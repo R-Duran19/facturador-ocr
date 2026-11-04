@@ -28,26 +28,23 @@ Verificar todo con `python check_setup.py`.
 
 ## Instalación en otra computadora (clon)
 
-Requisitos: **Windows**, [Git](https://git-scm.com/download/win) y [Python 3.12](https://www.python.org/downloads/) (marcando *Add Python to PATH*).
+Requisitos: **Windows** e internet. **Python no hace falta instalarlo**: `instalar.bat` lo instala solo (3.12, silencioso).
 
-```bash
-git clone <URL_DEL_REPO> "Facturador OCR"
-cd "Facturador OCR"
-instalar.bat
-```
-
-`instalar.bat` hace todo automático:
-1. Crea el entorno virtual `venv`
-2. Instala las dependencias con versiones fijadas (`requirements.txt`)
-3. Crea tu `.env` desde la plantilla (si no existe)
-4. Ofrece crear el acceso directo en el Escritorio y arrancar
+1. Bajá el proyecto: `git clone https://github.com/R-Duran19/facturador-ocr.git` — o desde GitHub: **Code → Download ZIP** y descomprimilo.
+2. Entrá a la carpeta y ejecutá **`instalar.bat`** (doble clic). Hace todo solo:
+   - Instala Python si no existe (winget o instalador oficial)
+   - Crea el entorno virtual `venv`
+   - Instala las dependencias con versiones fijadas (`requirements.txt`)
+   - Crea tu `.env` desde la plantilla (si no existe)
+   - Verifica la instalación (`check_setup.py`)
+   - Ofrece crear el acceso directo en el Escritorio y arrancar
 
 Único paso manual: abrir `.env` y poner tu `GEMINI_API_KEY` (de https://aistudio.google.com/apikey).
 Si querés proteger la app con contraseña, también `APP_PASSWORD` en el mismo archivo.
-Verificá que todo esté OK con: `venv\Scripts\python.exe check_setup.py`
 
 Luego: doble clic al acceso directo **Facturador OCR** del Escritorio (o `iniciar.bat`).
-Para mover una instalación ya usada a otra PC: copiar `facturas.db` + `.env` + carpeta `archivos/`.
+Para mover una instalación ya usada a otra PC: usar el **paquete de datos** (Configuración → Sistema)
+o copiar `facturas.db` + `.env` + carpeta `archivos/`.
 
 ## Estructura
 ```text
