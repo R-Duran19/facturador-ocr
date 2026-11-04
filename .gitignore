@@ -7,9 +7,9 @@ service_account.json
 credentials*.json
 
 # ===== DATOS DE NEGOCIO (facturas y clientes reales) =====
-facturas.db
-facturas.db-wal
-facturas.db-shm
+*.db
+*.db-wal
+*.db-shm
 backups/
 archivos/
 archivos_test/
