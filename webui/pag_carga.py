@@ -1,6 +1,6 @@
-"""Portada y trabajo diario: MULTI-SUBIDA de facturas por proveedor con cola en vivo."""
+"""Portada y trabajo diario: carga de facturas por proveedor con cola en vivo."""
 
-import itertools
+import re
 from datetime import date
 
 from nicegui import ui
@@ -27,9 +27,6 @@ COLUMNAS_ARCHIVO = [
     {"name": "monto_total", "label": "Monto", "field": "monto_total", "align": "right"},
     {"name": "observaciones", "label": "Observaciones", "field": "observaciones", "align": "left"},
 ]
-
-SLOTS = []
-_SEQ = itertools.count(1)
 
 
 def _mes_actual() -> str:
@@ -134,9 +131,9 @@ document.addEventListener('click', function (ev) {
     with ui.expansion("¿Cómo funciona?", icon="help_outline").classes("w-full text-sm"):
         with ui.column().classes("gap-1 text-sm"):
             ui.label(
-                "1. Elegí el mes. 2. Cada tarjeta es un PROVEEDOR: elegilo (el % sale de su ficha) "
-                "y arrastrá sus facturas. 3. Tocá Procesar — podés armar otro lote de otro proveedor "
-                "mientras corre. 4. Todo se guarda solo; duplicadas y errores esperan tu decisión."
+                "1. Elegí el mes. 2. Elegí el PROVEEDOR (el % sale de su ficha) y arrastrá sus facturas. "
+                "3. Tocá Procesar — se van a la cola y el campo se limpia para cargar otro proveedor. "
+                "4. Todo se guarda solo; duplicadas y errores esperan tu decisión."
             )
 
     def _dialogo_nuevo_mes():
@@ -176,7 +173,7 @@ document.addEventListener('click', function (ev) {
                 ui.button("Crear y usar", icon="check", on_click=_crear).props("unelevated dense")
             dialogo.open()
 
-    cont_slots = ui.column().classes("w-full gap-4")
+    estado_archivos = {"archivos": []}
 
     def _pct_de(proveedor: str) -> float:
         ficha = fichas.get(proveedor)
@@ -188,112 +185,10 @@ document.addEventListener('click', function (ev) {
             pct = 0.0
         return pct if pct > 0 else 3.5
 
-    @ui.refreshable
-    def pintar_slots():
-        cont_slots.clear()
-        with cont_slots:
-            if not SLOTS:
-                ui.label("Sin espacios de carga. Agregá uno por proveedor abajo.").classes("opacity-50")
-            for slot in SLOTS:
-                _pintar_slot(slot)
-            with ui.row().classes("w-full gap-2"):
-                ui.button(
-                    "＋ Agregar espacio para otro proveedor",
-                    icon="add_business",
-                    on_click=lambda: (_nuevo_slot(), pintar_slots.refresh()),
-                ).props("unelevated no-caps")
+    def _quitar_archivo(nombre: str):
+        estado_archivos["archivos"] = [(n, d) for n, d in estado_archivos["archivos"] if n != nombre]
 
-    def _nuevo_slot():
-        usados = {s["proveedor"] for s in SLOTS if s["proveedor"]}
-        sugerido = next((p for p in opciones_prov if p not in usados), opciones_prov[0] if opciones_prov else None)
-        SLOTS.append(
-            {
-                "id": next(_SEQ),
-                "proveedor": sugerido,
-                "pct": _pct_de(sugerido),
-                "archivos": [],
-            }
-        )
-
-    def _pintar_slot(slot: dict):
-        sid = slot["id"]
-        with ui.card().classes("w-full border-2").style("border-color: var(--q-primary);"):
-            with ui.row().classes("w-full items-center gap-3"):
-                ui.badge(str(sid), color="primary").props("rounded")
-                pct_input = ui.number(
-                    "% compra (de su ficha)",
-                    value=slot["pct"],
-                    format="%.2f",
-                    min=0.0,
-                    max=100.0,
-                ).props("disable").tooltip(
-                    "Se define en Configuración → Proveedores. Correcciones por factura: página Facturas."
-                ).classes("w-48")
-                sel_prov = ui.select(
-                    opciones_prov,
-                    value=slot["proveedor"],
-                    label=f"Proveedor del espacio {sid}",
-                    on_change=lambda e, s=slot: (
-                        s.update({"proveedor": e.value, "pct": _pct_de(e.value)}),
-                        pct_input.set_value(_pct_de(e.value)),
-                    ),
-                ).classes("w-56")
-                ui.button(
-                    "🚀 Procesar",
-                    icon="rocket_launch",
-                    on_click=lambda s=slot: _procesar_slot(s),
-                ).props("unelevated dense no-caps color=primary").tooltip(
-                    "Procesa los archivos de este espacio con la IA"
-                )
-                ui.space()
-                if len(SLOTS) > 1:
-                    ui.button(
-                        icon="delete",
-                        on_click=lambda s=slot: (_quitar_slot(s), pintar_slots.refresh()),
-                    ).props("flat dense round color=negative").tooltip("Quitar este espacio (y sus archivos en cola local)")
-
-            cont_pend = ui.column().classes("w-full gap-2")
-
-            def pintar_pend():
-                cont_pend.clear()
-                with cont_pend:
-                    if slot["archivos"]:
-                        with ui.row().classes("flex-wrap gap-2 items-center"):
-                            ui.badge(f"{len(slot['archivos'])} en cola local", color="blue-2").props("text-color=black")
-                            for nombre, _ in slot["archivos"]:
-                                with ui.row().classes("items-center q-px-sm q-py-xs rounded-borders bordered"):
-                                    ui.label(nombre).classes("text-xs")
-                                    ui.button(
-                                        icon="close",
-                                        on_click=lambda n=nombre: (_quitar_archivo(slot, n), pintar_pend()),
-                                    ).props("flat dense round size=xs")
-
-                    else:
-                        ui.label("Sin archivos en este espacio. Arrastrá los de este proveedor abajo ⬇").classes(
-                            "text-xs opacity-50"
-                        )
-
-            slot["_refrescar_pend"] = pintar_pend
-            pintar_pend()
-
-            ui.upload(
-                multiple=True,
-                auto_upload=True,
-                on_upload=lambda e, s=slot: _recibir_archivo(e, s),
-                on_rejected=lambda: ui.notify(
-                    "Archivo rechazado: tiene que ser JPG, PNG o PDF y pesar menos de 10 MB", type="negative"
-                ),
-            ).props(f"accept=.jpg,.jpeg,.png,.pdf, max-file-size={config.MAX_FILE_MB * 1024 * 1024}").classes(
-                "w-full dropzone"
-            )
-
-    def _quitar_archivo(slot: dict, nombre: str):
-        slot["archivos"] = [(n, d) for n, d in slot["archivos"] if n != nombre]
-
-    def _quitar_slot(slot: dict):
-        SLOTS[:] = [s for s in SLOTS if s["id"] != slot["id"]]
-
-    async def _recibir_archivo(e, slot: dict) -> None:
+    async def _recibir_archivo(e) -> None:
         archivo = getattr(e, "file", None) or e
         nombre = (getattr(archivo, "name", "") or "").strip() or "archivo"
         extens = ("." + nombre.rsplit(".", 1)[-1].lower()) if "." in nombre else ""
@@ -311,37 +206,37 @@ document.addEventListener('click', function (ev) {
         if len(datos) > config.MAX_FILE_MB * 1024 * 1024:
             ui.notify(f"{nombre}: supera {config.MAX_FILE_MB} MB", type="negative")
             return
-        if any(n == nombre for n, _ in slot["archivos"]):
+        if any(n == nombre for n, _ in estado_archivos["archivos"]):
             base, ext = nombre.rsplit(".", 1)
             nombre = f"{base}_2.{ext}"
-        slot["archivos"].append((nombre, datos))
-        refrescar = slot.get("_refrescar_pend") or (lambda: None)
-        refrescar()
-        ui.notify(f"✅ {nombre} listo ({len(slot['archivos'])} en cola)", type="positive", timeout=1)
+        estado_archivos["archivos"].append((nombre, datos))
+        pintar_pend()
+        ui.notify(f"✅ {nombre} listo ({len(estado_archivos['archivos'])} en cola)", type="positive", timeout=1)
 
-    def _procesar_slot(slot: dict):
-        import re
-
-        if not slot["archivos"]:
+    def _procesar():
+        archivos = estado_archivos["archivos"]
+        if not archivos:
+            ui.notify("Subí al menos una factura primero.", type="warning")
             return
         mes = (sel_mes.value or "").strip()
         if not re.match(r"^\d{4}_\d{2}_\S+$", mes):
             ui.notify(f"Mes inválido: '{mes}'. Formato: 2026_10_Octubre", type="negative")
             return
-        if not slot["proveedor"]:
-            ui.notify("Elegí el proveedor del espacio.", type="warning")
+        proveedor = sel_prov.value
+        if not proveedor:
+            ui.notify("Elegí el proveedor.", type="warning")
             return
         gasto = db.leer_gasto_ia()
         llamadas = sum(m["llamadas"] for m in gasto["por_mes"])
         promedio = (gasto["total"] / llamadas) if llamadas else 0.0007
-        n = len(slot["archivos"])
-        pct = slot["pct"] or 0.0
+        n = len(archivos)
+        pct = pct_input.value or 0.0
 
         with ui.dialog() as dialogo, ui.card().classes("w-full max-w-[480px]"):
             ui.label("¿Todo listo?").classes("text-lg font-bold")
             with ui.column().classes("w-full gap-1 text-sm"):
                 ui.label(f"📄 Archivos: {n}")
-                ui.label(f"🚚 Proveedor: {slot['proveedor']}")
+                ui.label(f"🚚 Proveedor: {proveedor}")
                 ui.label(f"📅 Mes: {_legible(mes)} ({mes})")
                 ui.label(f"💸 % compra: {pct:g}%")
                 ui.label(f"⚡ Costo estimado: ≈ ${promedio * n:.4f}")
@@ -358,12 +253,71 @@ document.addEventListener('click', function (ev) {
         dialogo.open()
 
         def _ejecutar():
-            COLA.agregar_lote(mes, slot["proveedor"], list(slot["archivos"]), pct)
-            slot["archivos"] = []
-            refrescar_pend = slot.get("_refrescar_pend") or (lambda: None)
-            refrescar_pend()
+            COLA.agregar_lote(mes, proveedor, list(archivos), pct)
+            estado_archivos["archivos"] = []
+            pintar_pend()
             pintar_lotes.refresh()
-            ui.notify(f"Lote de {slot['proveedor']} procesando. Podés cargar otro lote mientras.", type="positive")
+            ui.notify(f"Lote de {proveedor} procesando. Elegí otro proveedor y repetí.", type="positive")
+
+    with ui.card().classes("w-full border-2").style("border-color: var(--q-primary);"):
+        with ui.row().classes("w-full items-center gap-3"):
+            sel_prov = ui.select(
+                opciones_prov,
+                value=opciones_prov[0] if opciones_prov else None,
+                label="Proveedor",
+                on_change=lambda e: pct_input.set_value(_pct_de(e.value)),
+            ).classes("w-56")
+            pct_input = ui.number(
+                "% compra (de su ficha)",
+                value=_pct_de(opciones_prov[0]) if opciones_prov else 3.5,
+                format="%.2f",
+                min=0.0,
+                max=100.0,
+            ).props("disable").tooltip(
+                "Se define en Configuración → Proveedores. Correcciones por factura: página Facturas."
+            ).classes("w-48")
+            ui.space()
+            ui.button(
+                "🚀 Procesar",
+                icon="rocket_launch",
+                on_click=_procesar,
+            ).props("unelevated dense no-caps color=primary").tooltip(
+                "Procesa los archivos subidos con la IA"
+            )
+
+        cont_pend = ui.column().classes("w-full gap-2")
+
+        def pintar_pend():
+            cont_pend.clear()
+            with cont_pend:
+                archivos = estado_archivos["archivos"]
+                if archivos:
+                    with ui.row().classes("flex-wrap gap-2 items-center"):
+                        ui.badge(f"{len(archivos)} en cola local", color="blue-2").props("text-color=black")
+                        for nombre, _ in archivos:
+                            with ui.row().classes("items-center q-px-sm q-py-xs rounded-borders bordered"):
+                                ui.label(nombre).classes("text-xs")
+                                ui.button(
+                                    icon="close",
+                                    on_click=lambda n=nombre: (_quitar_archivo(n), pintar_pend()),
+                                ).props("flat dense round size=xs")
+                else:
+                    ui.label("Sin archivos. Elegí el proveedor y arrastrá sus facturas abajo ⬇").classes(
+                        "text-xs opacity-50"
+                    )
+
+        ui.upload(
+            multiple=True,
+            auto_upload=True,
+            on_upload=_recibir_archivo,
+            on_rejected=lambda: ui.notify(
+                "Archivo rechazado: tiene que ser JPG, PNG o PDF y pesar menos de 10 MB", type="negative"
+            ),
+        ).props(f"accept=.jpg,.jpeg,.png,.pdf, max-file-size={config.MAX_FILE_MB * 1024 * 1024}").classes(
+            "w-full dropzone"
+        )
+
+    pintar_pend()
 
     # ---------- COLA GLOBAL ----------
 
@@ -442,7 +396,6 @@ document.addEventListener('click', function (ev) {
         else:
             COLA.descartar_archivo(lote_id, indice)
 
-    pintar_slots()
     pintar_lotes()
     snapshot = {"hash": ""}
 
