@@ -6,6 +6,7 @@ import db
 import exportador
 import pdf_reportes
 import reportes
+from webui import pdf_url
 from webui.componentes import tarjeta_metrica
 from webui.plantilla import pagina
 
@@ -50,13 +51,12 @@ def pagina_reportes():
         ui.space()
         ui.button("Actualizar", icon="refresh", on_click=lambda: pintar()).props("flat")
         ui.button("Excel de control", icon="table_view", on_click=lambda: _exportar()).props("flat")
-        ui.button("PDF resumen", icon="picture_as_pdf", on_click=lambda: _pdf_resumen()).props("flat")
+        with ui.link(target=pdf_url.url_resumen(sel_mes.value), new_tab=True).classes(
+            "row items-center gap-1 text-primary text-sm font-semibold no-underline"
+        ):
+            ui.icon("picture_as_pdf", size="xs")
+            ui.label("PDF resumen (pestaña nueva)")
         ui.button("PDFs por empresa (.zip)", icon="folder_zip", on_click=lambda: _pdf_empresas()).props("unelevated")
-
-    def _pdf_resumen():
-        datos = pdf_reportes.pdf_resumen_mes(sel_mes.value)
-        ui.download(datos, filename=f"control {sel_mes.value}.pdf")
-        ui.notify("PDF generado.", type="positive")
 
     def _pdf_empresas():
         datos, nombre = pdf_reportes.pdfs_por_empresa_zip(sel_mes.value)

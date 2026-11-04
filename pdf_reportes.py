@@ -5,35 +5,64 @@ import zipfile
 from datetime import date
 
 from fpdf import FPDF
+from fpdf.fonts import FontFace
 
 import db
 import reportes
 
 __all__ = ["pdf_empresa", "pdf_resumen_mes", "pdfs_por_empresa_zip"]
 
+_VERDE_TITULO = (216, 232, 222)
+_VERDE_TITULO_TEXTO = (27, 67, 50)
+_HEADER_FILL = (226, 238, 230)
+_HEADER_TEXT = (27, 67, 50)
+_ZEBRA = (250, 252, 250)
+
 
 def _pdf_base(titulo: str) -> FPDF:
     pdf = FPDF(orientation="L", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    pdf.set_fill_color(23, 94, 59)
-    pdf.set_text_color(255, 255, 255)
-    pdf.set_font("helvetica", "B", 15)
-    pdf.cell(0, 12, titulo, new_x="LMARGIN", new_y="NEXT", fill=True)
+    pdf.set_fill_color(*_VERDE_TITULO)
+    pdf.set_text_color(*_VERDE_TITULO_TEXTO)
+    pdf.set_font("helvetica", "B", 12)
+    pdf.cell(0, 10, titulo, new_x="LMARGIN", new_y="NEXT", fill=True)
     pdf.set_text_color(0, 0, 0)
-    pdf.ln(3)
+    pdf.set_font("helvetica", "", 8)
+    pdf.ln(2)
     return pdf
+
+
+def _tabla_datos(pdf: FPDF, anchos: list, encabezados: list, filas: list, alineados) -> None:
+    with pdf.table(
+        borders_layout="ALL",
+        text_align=alineados,
+        col_widths=anchos,
+        line_height=5,
+        padding=1.4,
+        num_heading_rows=1,
+        headings_style=FontFace(emphasis="BOLD", size_pt=8.5, fill_color=_HEADER_FILL, color=_HEADER_TEXT),
+        cell_fill_color=_ZEBRA,
+        cell_fill_mode="ROWS",
+    ) as tabla:
+        fila = tabla.row()
+        for texto in encabezados:
+            fila.cell(texto)
+        for valores in filas:
+            fila = tabla.row()
+            for valor in valores:
+                fila.cell(str(valor))
 
 
 def _tabla(pdf: FPDF, anchos: list, fila: list, estilo: str = "") -> None:
     if estilo == "header":
-        pdf.set_font("helvetica", "B", 9.5)
-        pdf.set_fill_color(220, 235, 225)
+        pdf.set_font("helvetica", "B", 8.5)
+        pdf.set_fill_color(*_HEADER_FILL)
     elif estilo == "total":
-        pdf.set_font("helvetica", "B", 9.5)
+        pdf.set_font("helvetica", "B", 8.5)
         pdf.set_fill_color(240, 240, 240)
     else:
-        pdf.set_font("helvetica", "", 9)
+        pdf.set_font("helvetica", "", 8)
     for texto, ancho in zip(fila, anchos):
         pdf.cell(ancho, 7, str(texto), border=1, fill=bool(estilo))
     pdf.ln()
@@ -58,9 +87,11 @@ def pdf_empresa(cliente: str, mes: str) -> bytes:
     total_cobrar = sum(v["Precio_Cobrado"] for v in ventas)
     total_cobrado = sum(v["Total_Cobrado"] for v in ventas)
     saldo = round(total_cobrar - total_cobrado, 2)
-    ficha = next(
-        (c for c in db.leer_clientes() if c["Nombre_Razon_Social"] == cliente), {}
-    )
+    ficha = next((c for c in db.leer_clientes() if c["Nombre_Razon_Social"] == cliente), {})
+    try:
+        pct_ficha = float(ficha.get("Pct_Venta") or 0)
+    except (TypeError, ValueError):
+        pct_ficha = 0.0
     contacto = " - ".join(
         p
         for p in (
@@ -72,17 +103,20 @@ def pdf_empresa(cliente: str, mes: str) -> bytes:
 
     pdf = _pdf_base(f"VENTAS COMPLETAS - {_limpia(cliente)} - {_limpia(mes)}")
     if contacto:
-        pdf.set_font("helvetica", "", 10)
+        pdf.set_font("helvetica", "", 8.5)
         pdf.cell(0, 6, f"WhatsApp / Contacto: {_limpia(contacto)}", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
-    anchos = [25, 62, 30, 22, 22, 25, 30]
-    _tabla(pdf, anchos, ["Fecha", "Empresa emisora", "NIT", "Factura N", "Monto (Bs)", "% Venta", "A cobrar (Bs)"], "header")
+
+    filas = []
     for f in facturas:
         venta = next((v for v in ventas if f["ID"] in [i.strip() for i in v["Facturas_IDs"].split(",")]), None)
-        pct_venta = (venta["Precio_Cobrado"] / venta["Monto_Nominal"] * 100) if venta and venta["Monto_Nominal"] else 0
-        _tabla(
-            pdf,
-            anchos,
+        if pct_ficha > 0:
+            pct_venta = pct_ficha
+        elif venta and venta["Monto_Nominal"]:
+            pct_venta = round(venta["Precio_Cobrado"] / venta["Monto_Nominal"] * 100, 2)
+        else:
+            pct_venta = 0.0
+        filas.append(
             [
                 _limpia(f["Fecha_Emision"] or "-"),
                 _limpia(f["Razon_Social"] or "-"),
@@ -91,16 +125,21 @@ def pdf_empresa(cliente: str, mes: str) -> bytes:
                 f"{f['Monto_Total']:,.2f}",
                 f"{pct_venta:g}%",
                 f"{f['Monto_Total'] * pct_venta / 100:,.2f}",
-            ],
+            ]
         )
+    _tabla_datos(
+        pdf,
+        [26, 76, 32, 24, 28, 24, 34],
+        ["Fecha", "Empresa emisora", "NIT", "Factura N", "Monto (Bs)", "% Venta", "A cobrar (Bs)"],
+        filas,
+        ("CENTER", "LEFT", "CENTER", "CENTER", "RIGHT", "RIGHT", "RIGHT"),
+    )
+
     pdf.ln(4)
     _tabla(pdf, [45, 40], ["TOTAL FACTURADO (Bs)", f"{total_nominal:,.2f}"], "total")
     _tabla(pdf, [45, 40], ["TOTAL A COBRAR (Bs)", f"{total_cobrar:,.2f}"], "total")
     _tabla(pdf, [45, 40], ["COBRADO (Bs)", f"{total_cobrado:,.2f}"])
     _tabla(pdf, [45, 40], ["SALDO (Bs)", f"{saldo:,.2f}"], "total")
-    pdf.set_font("helvetica", "", 8)
-    pdf.ln(2)
-    pdf.cell(0, 6, f"Generado el {date.today().isoformat()} - Facturador OCR", align="R")
     return bytes(pdf.output())
 
 
@@ -113,27 +152,22 @@ def pdf_resumen_mes(mes: str) -> bytes:
     pdf.set_font("helvetica", "B", 12)
     pdf.cell(0, 8, "Resumen de costos y ganancia", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(1)
-    anchos = [38, 60, 32, 18, 30, 18, 32, 32]
-    _tabla(pdf, anchos, ["Proveedor", "Cliente", "Total Facturado", "% Comp", "Compra", "% Venta", "Venta", "Utilidad"], "header")
-    for f in costos:
-        _tabla(
-            pdf,
-            anchos,
-            [
-                _limpia(f["Proveedor"]),
-                _limpia(f["Cliente"]),
-                f"{f['Total_Facturado']:,.2f}",
-                f"{f['Pct_Compra']:g}%",
-                f"{f['Compra']:,.2f}",
-                f"{f['Pct_Venta']:g}%",
-                f"{f['Venta']:,.2f}",
-                f"{f['Utilidad']:,.2f}",
-            ],
-        )
+
+    filas_costos = [
+        [
+            _limpia(f["Proveedor"]),
+            _limpia(f["Cliente"]),
+            f"{f['Total_Facturado']:,.2f}",
+            f"{f['Pct_Compra']:g}%",
+            f"{f['Compra']:,.2f}",
+            f"{f['Pct_Venta']:g}%",
+            f"{f['Venta']:,.2f}",
+            f"{f['Utilidad']:,.2f}",
+        ]
+        for f in costos
+    ]
     if costos:
-        _tabla(
-            pdf,
-            anchos,
+        filas_costos.append(
             [
                 "TOTALES",
                 "",
@@ -143,35 +177,36 @@ def pdf_resumen_mes(mes: str) -> bytes:
                 "",
                 f"{sum(f['Venta'] for f in costos):,.2f}",
                 f"{sum(f['Utilidad'] for f in costos):,.2f}",
-            ],
-            "total",
+            ]
         )
+    _tabla_datos(
+        pdf,
+        [34, 64, 30, 18, 28, 18, 28, 30],
+        ["Proveedor", "Cliente", "Total Facturado", "% Comp", "Compra", "% Venta", "Venta", "Utilidad"],
+        filas_costos,
+        ("LEFT", "LEFT", "RIGHT", "RIGHT", "RIGHT", "RIGHT", "RIGHT", "RIGHT"),
+    )
 
     pdf.ln(6)
     pdf.set_font("helvetica", "B", 12)
     pdf.cell(0, 8, "Ventas resumen por cliente", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(1)
-    anchos2 = [12, 75, 28, 32, 32, 18, 30, 32]
-    _tabla(pdf, anchos2, ["#", "Cliente", "Rubro", "Monto", "Cobrar", "%", "Cobrado", "Saldo"], "header")
-    for f in filas_v:
-        _tabla(
-            pdf,
-            anchos2,
-            [
-                str(f["Nro"]),
-                _limpia(f["Cliente"]),
-                _limpia(f["Rubro"]),
-                f"{f['Monto']:,.2f}",
-                f"{f['Cobrar']:,.2f}",
-                f"{f['Pct']:g}%",
-                f"{f['Cobrado']:,.2f}",
-                f"{f['Saldo']:,.2f}",
-            ],
-        )
+
+    filas_ventas = [
+        [
+            str(f["Nro"]),
+            _limpia(f["Cliente"]),
+            _limpia(f["Rubro"]),
+            f"{f['Monto']:,.2f}",
+            f"{f['Cobrar']:,.2f}",
+            f"{f['Pct']:g}%",
+            f"{f['Cobrado']:,.2f}",
+            f"{f['Saldo']:,.2f}",
+        ]
+        for f in filas_v
+    ]
     if filas_v:
-        _tabla(
-            pdf,
-            anchos2,
+        filas_ventas.append(
             [
                 "",
                 "TOTALES",
@@ -181,9 +216,15 @@ def pdf_resumen_mes(mes: str) -> bytes:
                 "",
                 f"{sum(f['Cobrado'] for f in filas_v):,.2f}",
                 f"{sum(f['Saldo'] for f in filas_v):,.2f}",
-            ],
-            "total",
+            ]
         )
+    _tabla_datos(
+        pdf,
+        [12, 80, 26, 30, 30, 16, 28, 28],
+        ["#", "Cliente", "Rubro", "Monto", "Cobrar", "%", "Cobrado", "Saldo"],
+        filas_ventas,
+        ("CENTER", "LEFT", "LEFT", "RIGHT", "RIGHT", "RIGHT", "RIGHT", "RIGHT"),
+    )
     return bytes(pdf.output())
 
 

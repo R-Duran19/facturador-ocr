@@ -2,6 +2,10 @@
 
 import asyncio
 import os
+import sys
+
+if sys.platform.startswith("win"):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from nicegui import app, ui
 
@@ -17,6 +21,9 @@ from webui import (
     pag_reportes,
     pag_ventas,
 )
+from webui import pdf_url
+
+pdf_url.registrar()
 
 __all__ = ["main"]
 

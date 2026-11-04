@@ -2,10 +2,73 @@ import io
 import re
 
 import pandas as pd
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 
 import db
 import reportes
 from config import CARPETA_EXPORTS
+
+_CLAVES_MONTO = ("monto", "total", "cobrar", "saldo", "cobrado", "compra", "venta", "utilidad", "credito", "precio")
+
+
+def _estilar_hoja(ws, fila_header: int = 1, titulo: str = "") -> None:
+    """Formato prolijo: encabezado verde, bordes, zebra, formatos de moneda y anchos."""
+    verde = PatternFill("solid", fgColor="175E3B")
+    zebra = PatternFill("solid", fgColor="F3F9F5")
+    gris = PatternFill("solid", fgColor="EDEDED")
+    lado = Side(style="thin", color="C9D8CD")
+    borde = Border(left=lado, right=lado, top=lado, bottom=lado)
+
+    max_col = ws.max_column
+    max_row = ws.max_row
+
+    if titulo and fila_header >= 2:
+        celda = ws.cell(row=1, column=1)
+        celda.font = Font(bold=True, size=12, color="175E3B")
+
+    for j in range(1, max_col + 1):
+        celda = ws.cell(row=fila_header, column=j)
+        celda.font = Font(bold=True, color="FFFFFF")
+        celda.fill = verde
+        celda.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        celda.border = borde
+    ws.row_dimensions[fila_header].height = 22
+
+    encabezados = {
+        j: str(ws.cell(row=fila_header, column=j).value or "").strip().lower() for j in range(1, max_col + 1)
+    }
+    for i in range(fila_header + 1, max_row + 1):
+        es_total = "total" in str(ws.cell(row=i, column=1).value or "").strip().lower()
+        banda = (i - fila_header) % 2 == 0
+        for j in range(1, max_col + 1):
+            celda = ws.cell(row=i, column=j)
+            celda.border = borde
+            celda.alignment = Alignment(vertical="center", wrap_text=False)
+            if es_total:
+                celda.font = Font(bold=True)
+                celda.fill = gris
+            elif banda:
+                celda.fill = zebra
+            es_pct = encabezados[j].startswith("%")
+            if es_pct:
+                celda.number_format = "0.0#"
+            elif any(clave in encabezados[j] for clave in _CLAVES_MONTO) and isinstance(celda.value, (int, float)):
+                celda.number_format = "#,##0.00"
+
+    for j in range(1, max_col + 1):
+        largo = max(
+            (
+                len(str(celda.value))
+                for i in range(fila_header, max_row + 1)
+                for celda in [ws.cell(row=i, column=j)]
+                if celda.value is not None
+            ),
+            default=8,
+        )
+        ws.column_dimensions[get_column_letter(j)].width = min(max(largo + 3, 10), 52)
+
+    ws.freeze_panes = ws.cell(row=fila_header + 1, column=2)
 
 
 def _titulo_hoja(texto: str) -> str:
@@ -53,6 +116,9 @@ def exportar_mes_excel(mes: str) -> tuple[bytes, str]:
             pd.DataFrame(ventas)[
                 ["Cliente_Razon_Social", "Monto_Credito_Vendido", "Precio_Cobrado", "Estado_Cobro", "Facturas_IDs", "Notas"]
             ].to_excel(writer, sheet_name="VENTAS", index=False)
+
+        for ws in writer.sheets.values():
+            _estilar_hoja(ws, fila_header=1)
 
     datos = buffer.getvalue()
 
@@ -135,6 +201,10 @@ def exportar_reportes_mes(mes: str, incluir_todos: bool = False) -> tuple[bytes,
                 "",
             ]
         )
+
+        _estilar_hoja(hoja, fila_header=2, titulo=f"resumen de costos y ganancia - {mes}")
+        _estilar_hoja(hoja2, fila_header=2, titulo=f"ventas resumen - {mes}")
+
     datos = buffer.getvalue()
     try:
         from pathlib import Path
