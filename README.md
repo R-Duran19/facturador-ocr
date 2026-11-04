@@ -19,12 +19,35 @@ Todo local y veloz sobre **SQLite**, interfaz **NiceGUI**, procesamiento en **co
 
 ```bash
 venv\Scripts\activate
-python -m webui.main        # interfaz nueva → http://127.0.0.1:8080
-streamlit run app.py        # interfaz legacy (en paralelo hasta validación) → :8501
+python -m webui.main        # interfaz → http://127.0.0.1:8080
 ```
+(Legacy Streamlit `app.py`: requiere `pip install streamlit` aparte; ya no se usa).
 
 Primera vez: copiar `.env.example` a `.env` y completar `GEMINI_API_KEY` (AI Studio).
 Verificar todo con `python check_setup.py`.
+
+## Instalación en otra computadora (clon)
+
+Requisitos: **Windows**, [Git](https://git-scm.com/download/win) y [Python 3.12](https://www.python.org/downloads/) (marcando *Add Python to PATH*).
+
+```bash
+git clone <URL_DEL_REPO> "Facturador OCR"
+cd "Facturador OCR"
+instalar.bat
+```
+
+`instalar.bat` hace todo automático:
+1. Crea el entorno virtual `venv`
+2. Instala las dependencias con versiones fijadas (`requirements.txt`)
+3. Crea tu `.env` desde la plantilla (si no existe)
+4. Ofrece crear el acceso directo en el Escritorio y arrancar
+
+Único paso manual: abrir `.env` y poner tu `GEMINI_API_KEY` (de https://aistudio.google.com/apikey).
+Si querés proteger la app con contraseña, también `APP_PASSWORD` en el mismo archivo.
+Verificá que todo esté OK con: `venv\Scripts\python.exe check_setup.py`
+
+Luego: doble clic al acceso directo **Facturador OCR** del Escritorio (o `iniciar.bat`).
+Para mover una instalación ya usada a otra PC: copiar `facturas.db` + `.env` + carpeta `archivos/`.
 
 ## Estructura
 ```text
