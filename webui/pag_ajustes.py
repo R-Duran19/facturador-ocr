@@ -96,9 +96,10 @@ def seccion_sistema():
             ui.download(datos, filename=nombre)
             ui.notify(f"Paquete {nombre} generado ({len(datos) / 1e6:.1f} MB).", type="positive")
 
-        def _importar_paquete(e):
+        async def _importar_paquete(e):
             try:
-                contenido = e.content.read()
+                archivo = getattr(e, "file", None) or e
+                contenido = await archivo.read()
                 resumen = paquete_datos.importar(contenido)
                 ui.notify(
                     "Importado ✔ · " + ", ".join(f"{k}: {v}" for k, v in resumen.items()),
