@@ -1,0 +1,463 @@
+"""Portada y trabajo diario: MULTI-SUBIDA de facturas por proveedor con cola en vivo."""
+
+import itertools
+from datetime import date
+
+from nicegui import ui
+
+import config
+import db
+from ocr_queue import COLA
+from webui.componentes import chips_estado, strip_metricas, tarjeta_gasto_ia
+from webui.plantilla import pagina
+
+EXTENSIONES = {".jpg", ".jpeg", ".png", ".pdf"}
+
+MESES_ES = [
+    "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+    "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+]
+
+COLUMNAS_ARCHIVO = [
+    {"name": "nombre", "label": "Archivo", "field": "nombre", "align": "left"},
+    {"name": "estado", "label": "Estado", "field": "estado", "align": "center"},
+    {"name": "nro_factura", "label": "N° Factura", "field": "nro_factura", "align": "left"},
+    {"name": "razon_social", "label": "Emisor", "field": "razon_social", "align": "left"},
+    {"name": "cliente", "label": "Cliente", "field": "cliente", "align": "left"},
+    {"name": "monto_total", "label": "Monto", "field": "monto_total", "align": "right"},
+    {"name": "observaciones", "label": "Observaciones", "field": "observaciones", "align": "left"},
+]
+
+SLOTS = []
+_SEQ = itertools.count(1)
+
+
+def _mes_actual() -> str:
+    hoy = date.today()
+    return f"{hoy.year}_{hoy.month:02d}_{MESES_ES[hoy.month - 1]}"
+
+
+def _legible(nombre_mes: str) -> str:
+    try:
+        anio, num, _ = str(nombre_mes).split("_", 2)
+        return f"{MESES_ES[int(num) - 1]} {anio}"
+    except (ValueError, IndexError):
+        return str(nombre_mes)
+
+
+@pagina("/")
+def pagina_carga():
+    ui.add_head_html(
+        """
+<style>
+.dropzone .q-uploader {
+  box-shadow: none;
+  background: #F3F9F5;
+  border: 2px dashed #175E3B;
+  border-radius: 14px;
+  width: 100%;
+}
+.dropzone .q-uploader__header {
+  background: transparent;
+  color: #175E3B;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-height: 150px;
+  cursor: pointer;
+  position: relative;
+}
+.dropzone .q-uploader__header::before {
+  content: 'cloud_upload';
+  font-family: 'Material Icons';
+  font-size: 46px;
+  line-height: 1;
+}
+.dropzone .q-uploader__header::after {
+  content: 'Arrastrá acá  ·  o hacé clic';
+  font-size: 15px;
+  font-weight: 700;
+}
+.dropzone .q-uploader__header .q-uploader__title,
+.dropzone .q-uploader__header .q-uploader__subtitle { font-size: 11px; opacity: .55; }
+.dropzone .q-uploader__header .q-btn { display: none; }
+.dropzone .q-uploader__list { min-height: 0; }
+.body--dark .dropzone .q-uploader { background: rgba(23, 94, 59, 0.12); border-color: #6EE7A0; }
+.body--dark .dropzone .q-uploader__header { color: #86EFAC; }
+</style>
+<script>
+document.addEventListener('click', function (ev) {
+  var cabecera = ev.target.closest('.dropzone .q-uploader__header');
+  if (!cabecera || ev.target.closest('.q-btn')) return;
+  var boton = cabecera.querySelector('.q-btn, button');
+  if (boton) boton.click();
+});
+</script>
+"""
+    )
+
+    meses = sorted(set(db.listar_meses()) | {_mes_actual()}, reverse=True)
+    mes_hoy = _mes_actual()
+    opciones_mes = list(meses)
+    proveedores = [p for p in db.leer_proveedores() if p != "Sin Asignar"]
+    fichas = {p["Nombre_Proveedor"]: p for p in db.leer_proveedores_full()}
+    opciones_prov = [p for p in proveedores if p in fichas] or proveedores
+
+    strip_cont = ui.column().classes("w-full")
+
+    @ui.refreshable
+    def pintar_strip():
+        with ui.row().classes("w-full flex-wrap items-start gap-3"):
+            with ui.column().classes("flex-1 min-w-[420px] gap-0"):
+                strip_metricas(sel_mes.value or mes_hoy)
+            with ui.column().classes("items-end"):
+                tarjeta_gasto_ia()
+
+    with ui.row().classes("w-full flex-wrap items-end gap-3"):
+        sel_mes = ui.select(
+            opciones_mes,
+            value=mes_hoy if mes_hoy in opciones_mes else (opciones_mes[0] if opciones_mes else mes_hoy),
+            label="Mes de trabajo (escribí uno nuevo si no existe: 2026_11_Noviembre)",
+            new_value_mode="add",
+            on_change=lambda e: pintar_strip.refresh(),
+        ).classes("w-full max-w-md")
+        ui.button("＋ Nuevo mes", icon="calendar_month", on_click=lambda: _dialogo_nuevo_mes()).props("flat dense").tooltip(
+            "Crear un mes para registrar facturas"
+        )
+    ui.label(f"📍 Estamos en: {_legible(mes_hoy)} · Mes seleccionado: {_legible(sel_mes.value or '')}").classes(
+        "text-xs opacity-60 -mt-2"
+    )
+
+    pintar_strip()
+    ui.separator()
+
+    with ui.expansion("¿Cómo funciona?", icon="help_outline").classes("w-full text-sm"):
+        with ui.column().classes("gap-1 text-sm"):
+            ui.label(
+                "1. Elegí el mes. 2. Cada tarjeta es un PROVEEDOR: elegilo (el % sale de su ficha) "
+                "y arrastrá sus facturas. 3. Tocá Procesar — podés armar otro lote de otro proveedor "
+                "mientras corre. 4. Todo se guarda solo; duplicadas y errores esperan tu decisión."
+            )
+
+    def _dialogo_nuevo_mes():
+        with ui.dialog() as dialogo, ui.card().classes("w-full max-w-[420px]"):
+            ui.label("Nuevo mes de registro").classes("text-lg font-bold")
+            ui.label("Se crea al instante y queda listo para cargar facturas. Si ya existe, solo se selecciona.").classes(
+                "text-xs opacity-50"
+            )
+            hoy = date.today()
+            with ui.grid(columns=2).classes("w-full gap-3"):
+                e_anio = ui.select({a: str(a) for a in range(hoy.year - 1, hoy.year + 2)}, value=hoy.year, label="Año")
+                e_mes = ui.select({i + 1: nombre for i, nombre in enumerate(MESES_ES)}, value=hoy.month, label="Mes")
+            vista = ui.label("").classes("font-semibold text-primary")
+
+            def _vista():
+                vista.set_text(f"Se seleccionará: {e_mes.value:02d} / {e_anio.value}")
+
+            e_anio.on_value_change(lambda _: _vista())
+            e_mes.on_value_change(lambda _: _vista())
+            _vista()
+
+            def _crear():
+                nombre = f"{e_anio.value}_{int(e_mes.value):02d}_{MESES_ES[int(e_mes.value) - 1]}"
+                if nombre not in opciones_mes:
+                    opciones_mes.append(nombre)
+                    opciones_mes.sort(reverse=True)
+                    sel_mes.set_options(opciones_mes)
+                    ui.notify(f"Mes {nombre} listo para usar.", type="positive")
+                else:
+                    ui.notify(f"{nombre} ya existía: lo seleccioné.", type="info")
+                sel_mes.set_value(nombre)
+                pintar_strip.refresh()
+                dialogo.close()
+
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("Cancelar", on_click=dialogo.close).props("flat dense")
+                ui.button("Crear y usar", icon="check", on_click=_crear).props("unelevated dense")
+            dialogo.open()
+
+    cont_slots = ui.column().classes("w-full gap-4")
+
+    def _pct_de(proveedor: str) -> float:
+        ficha = fichas.get(proveedor)
+        if not ficha:
+            return 3.5
+        try:
+            pct = float(ficha.get("Comision_Pactada_Pct") or 0)
+        except (TypeError, ValueError):
+            pct = 0.0
+        return pct if pct > 0 else 3.5
+
+    @ui.refreshable
+    def pintar_slots():
+        cont_slots.clear()
+        with cont_slots:
+            if not SLOTS:
+                ui.label("Sin espacios de carga. Agregá uno por proveedor abajo.").classes("opacity-50")
+            for slot in SLOTS:
+                _pintar_slot(slot)
+            with ui.row().classes("w-full gap-2"):
+                ui.button(
+                    "＋ Agregar espacio para otro proveedor",
+                    icon="add_business",
+                    on_click=lambda: (_nuevo_slot(), pintar_slots.refresh()),
+                ).props("unelevated no-caps")
+
+    def _nuevo_slot():
+        usados = {s["proveedor"] for s in SLOTS if s["proveedor"]}
+        sugerido = next((p for p in opciones_prov if p not in usados), opciones_prov[0] if opciones_prov else None)
+        SLOTS.append(
+            {
+                "id": next(_SEQ),
+                "proveedor": sugerido,
+                "pct": _pct_de(sugerido),
+                "archivos": [],
+            }
+        )
+
+    def _pintar_slot(slot: dict):
+        sid = slot["id"]
+        with ui.card().classes("w-full border-2").style("border-color: var(--q-primary);"):
+            with ui.row().classes("w-full items-center gap-3"):
+                ui.badge(str(sid), color="primary").props("rounded")
+                pct_input = ui.number(
+                    "% compra (de su ficha)",
+                    value=slot["pct"],
+                    format="%.2f",
+                    min=0.0,
+                    max=100.0,
+                ).props("disable").tooltip(
+                    "Se define en Configuración → Proveedores. Correcciones por factura: página Facturas."
+                ).classes("w-48")
+                sel_prov = ui.select(
+                    opciones_prov,
+                    value=slot["proveedor"],
+                    label=f"Proveedor del espacio {sid}",
+                    on_change=lambda e, s=slot: (
+                        s.update({"proveedor": e.value, "pct": _pct_de(e.value)}),
+                        pct_input.set_value(_pct_de(e.value)),
+                    ),
+                ).classes("w-56")
+                ui.button(
+                    "🚀 Procesar",
+                    icon="rocket_launch",
+                    on_click=lambda s=slot: _procesar_slot(s),
+                ).props("unelevated dense no-caps color=primary").tooltip(
+                    "Procesa los archivos de este espacio con la IA"
+                )
+                ui.space()
+                if len(SLOTS) > 1:
+                    ui.button(
+                        icon="delete",
+                        on_click=lambda s=slot: (_quitar_slot(s), pintar_slots.refresh()),
+                    ).props("flat dense round color=negative").tooltip("Quitar este espacio (y sus archivos en cola local)")
+
+            cont_pend = ui.column().classes("w-full gap-2")
+
+            def pintar_pend():
+                cont_pend.clear()
+                with cont_pend:
+                    if slot["archivos"]:
+                        with ui.row().classes("flex-wrap gap-2 items-center"):
+                            ui.badge(f"{len(slot['archivos'])} en cola local", color="blue-2").props("text-color=black")
+                            for nombre, _ in slot["archivos"]:
+                                with ui.row().classes("items-center q-px-sm q-py-xs rounded-borders bordered"):
+                                    ui.label(nombre).classes("text-xs")
+                                    ui.button(
+                                        icon="close",
+                                        on_click=lambda n=nombre: (_quitar_archivo(slot, n), pintar_pend()),
+                                    ).props("flat dense round size=xs")
+
+                    else:
+                        ui.label("Sin archivos en este espacio. Arrastrá los de este proveedor abajo ⬇").classes(
+                            "text-xs opacity-50"
+                        )
+
+            slot["_refrescar_pend"] = pintar_pend
+            pintar_pend()
+
+            ui.upload(
+                multiple=True,
+                auto_upload=True,
+                on_upload=lambda e, s=slot: _recibir_archivo(e, s),
+                on_rejected=lambda: ui.notify(
+                    "Archivo rechazado: tiene que ser JPG, PNG o PDF y pesar menos de 10 MB", type="negative"
+                ),
+            ).props(f"accept=.jpg,.jpeg,.png,.pdf, max-file-size={config.MAX_FILE_MB * 1024 * 1024}").classes(
+                "w-full dropzone"
+            )
+
+    def _quitar_archivo(slot: dict, nombre: str):
+        slot["archivos"] = [(n, d) for n, d in slot["archivos"] if n != nombre]
+
+    def _quitar_slot(slot: dict):
+        SLOTS[:] = [s for s in SLOTS if s["id"] != slot["id"]]
+
+    async def _recibir_archivo(e, slot: dict) -> None:
+        archivo = getattr(e, "file", None) or e
+        nombre = (getattr(archivo, "name", "") or "").strip() or "archivo"
+        extens = ("." + nombre.rsplit(".", 1)[-1].lower()) if "." in nombre else ""
+        if extens not in EXTENSIONES:
+            ui.notify(f"{nombre}: solo JPG, PNG o PDF", type="negative")
+            return
+        try:
+            datos = await archivo.read()
+        except Exception:
+            ui.notify(f"{nombre}: no se pudo leer el archivo, reintentá la subida", type="negative")
+            return
+        if not datos:
+            ui.notify(f"{nombre}: archivo vacío", type="negative")
+            return
+        if len(datos) > config.MAX_FILE_MB * 1024 * 1024:
+            ui.notify(f"{nombre}: supera {config.MAX_FILE_MB} MB", type="negative")
+            return
+        if any(n == nombre for n, _ in slot["archivos"]):
+            base, ext = nombre.rsplit(".", 1)
+            nombre = f"{base}_2.{ext}"
+        slot["archivos"].append((nombre, datos))
+        refrescar = slot.get("_refrescar_pend") or (lambda: None)
+        refrescar()
+        ui.notify(f"✅ {nombre} listo ({len(slot['archivos'])} en cola)", type="positive", timeout=1)
+
+    def _procesar_slot(slot: dict):
+        import re
+
+        if not slot["archivos"]:
+            return
+        mes = (sel_mes.value or "").strip()
+        if not re.match(r"^\d{4}_\d{2}_\S+$", mes):
+            ui.notify(f"Mes inválido: '{mes}'. Formato: 2026_10_Octubre", type="negative")
+            return
+        if not slot["proveedor"]:
+            ui.notify("Elegí el proveedor del espacio.", type="warning")
+            return
+        gasto = db.leer_gasto_ia()
+        llamadas = sum(m["llamadas"] for m in gasto["por_mes"])
+        promedio = (gasto["total"] / llamadas) if llamadas else 0.0007
+        n = len(slot["archivos"])
+        pct = slot["pct"] or 0.0
+
+        with ui.dialog() as dialogo, ui.card().classes("w-full max-w-[480px]"):
+            ui.label("¿Todo listo?").classes("text-lg font-bold")
+            with ui.column().classes("w-full gap-1 text-sm"):
+                ui.label(f"📄 Archivos: {n}")
+                ui.label(f"🚚 Proveedor: {slot['proveedor']}")
+                ui.label(f"📅 Mes: {_legible(mes)} ({mes})")
+                ui.label(f"💸 % compra: {pct:g}%")
+                ui.label(f"⚡ Costo estimado: ≈ ${promedio * n:.4f}")
+            ui.label("Arrancan en segundo plano. Los OK se guardan y su venta se crea sola; duplicadas y errores esperan tu decisión.").classes(
+                "text-xs opacity-60"
+            )
+            with ui.row().classes("w-full justify-end gap-2 q-mt-sm"):
+                ui.button("Revisar de nuevo", on_click=dialogo.close).props("flat dense")
+                ui.button(
+                    f"Sí, procesar {n} ahora",
+                    icon="rocket_launch",
+                    on_click=lambda: (dialogo.close(), _ejecutar()),
+                ).props("unelevated dense color=primary")
+        dialogo.open()
+
+        def _ejecutar():
+            COLA.agregar_lote(mes, slot["proveedor"], list(slot["archivos"]), pct)
+            slot["archivos"] = []
+            refrescar_pend = slot.get("_refrescar_pend") or (lambda: None)
+            refrescar_pend()
+            pintar_lotes.refresh()
+            ui.notify(f"Lote de {slot['proveedor']} procesando. Podés cargar otro lote mientras.", type="positive")
+
+    # ---------- COLA GLOBAL ----------
+
+    ui.separator()
+    with ui.row().classes("w-full items-center gap-2"):
+        ui.badge("4", color="primary").props("rounded")
+        ui.label("Cola de procesamiento (todos los proveedores)").classes("font-semibold")
+        ui.label("Los OK se guardan y su venta se crea sola; duplicadas y errores esperan tu decisión.").classes(
+            "text-xs opacity-50"
+        )
+
+    contenedor_lotes = ui.column().classes("w-full gap-4")
+
+    @ui.refreshable
+    def pintar_lotes():
+        contenedor_lotes.clear()
+        lotes = COLA.resumen_lotes()
+        with contenedor_lotes:
+            if not lotes:
+                ui.label("Sin lotes en curso.").classes("opacity-50")
+            for lote in lotes:
+                with ui.card().classes("w-full"):
+                    with ui.row().classes("w-full items-center gap-3"):
+                        ui.icon("folder_zip")
+                        ui.label(
+                            f"Lote {lote['id']} · {lote['proveedor']} al {lote['pct_compra']:g}% · {lote['mes']}"
+                        ).classes("font-semibold")
+                        ui.space()
+                        ui.label(f"{lote['hechos']}/{lote['total']}").classes("opacity-70")
+                        if not lote["activo"]:
+                            ui.button(
+                                icon="delete_sweep",
+                                on_click=lambda: (COLA.limpiar_completados(), pintar_lotes.refresh()),
+                            ).props("flat dense round").tooltip("Limpiar lotes terminados")
+                    ui.linear_progress(value=lote["progreso"], show_value=False).classes("w-full")
+                    chips_estado(lote["ok"], lote["duplicados"], lote["errores"])
+                    suma_ok = sum(a["monto_total"] for a in lote["archivos"] if a["estado"] == "OK")
+                    if suma_ok:
+                        ui.label(f"Σ montos guardados: Bs {suma_ok:,.2f}").classes("text-xs opacity-60")
+                    for v in lote.get("ventas", []):
+                        with ui.row().classes("items-center gap-2 q-px-sm"):
+                            ui.icon("sell", color="green", size="xs")
+                            ui.label(
+                                f"Venta creada a {v['cliente']} por Bs {v['precio']:,.2f} (al % de su ficha — editable en Ventas)"
+                            ).classes("text-xs text-green-700 dark:text-green-400")
+                    ui.table(
+                        columns=COLUMNAS_ARCHIVO,
+                        rows=[{**a, "monto_total": f"{a['monto_total']:,.2f}"} for a in lote["archivos"]],
+                        row_key="nombre",
+                        pagination=10,
+                    ).classes("w-full").props("flat dense")
+                    acciones = []
+                    for i, a in enumerate(lote["archivos"]):
+                        if a["estado"] == "DUPLICADO":
+                            acciones.append((i, a["nombre"], "Adjuntar PDF a la existente", "orange", "attach_file"))
+                        elif a["estado"] == "ERROR":
+                            acciones.append((i, a["nombre"], "Reintentar", "blue", "replay"))
+                    if acciones:
+                        with ui.row().classes("flex-wrap gap-2"):
+                            ui.label("Decide:").classes("text-sm opacity-60")
+                            for i, nombre, texto, color, icono in acciones:
+                                ui.button(
+                                    f"{texto}: {nombre}",
+                                    icon=icono,
+                                    on_click=lambda i=i, t=texto: (
+                                        cola_accion(lote["id"], i, t),
+                                        pintar_lotes.refresh(),
+                                    ),
+                                ).props(f"unelevated no-caps color={color} dense")
+
+    def cola_accion(lote_id: str, indice: int, tipo: str) -> None:
+        if tipo == "Adjuntar PDF a la existente":
+            COLA.guardar_duplicado(lote_id, indice)
+        elif tipo == "Reintentar":
+            COLA.reintentar_archivo(lote_id, indice)
+        else:
+            COLA.descartar_archivo(lote_id, indice)
+
+    pintar_slots()
+    pintar_lotes()
+    snapshot = {"hash": ""}
+
+    def _tick():
+        try:
+            import json
+
+            actual = json.dumps(COLA.resumen_lotes(), sort_keys=True, default=str)
+        except Exception:
+            return
+        if actual != snapshot["hash"]:
+            snapshot["hash"] = actual
+            pintar_lotes.refresh()
+
+    ui.timer(1.5, _tick)
+    ui.label("¿Ya guardaste todo? → Gestión del mes para ver compras/ventas · Ventas y cobros para cobrar y pagar").classes(
+        "text-sm opacity-50"
+    )

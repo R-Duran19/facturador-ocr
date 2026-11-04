@@ -1,0 +1,29 @@
+gestion, visualizar por proveedor, o cliente YA SUMADO EL PORCENTAJE, SI ES MISMO CLIENTE
+
+
+
+sin proveedor nombre empresa, nit, empresa, 
+revisar ventas completas
+ precio dfe venta
+
+pdf sin proveedores
+
+
+lista de empreas clientes, NOMBRE DE WHAST, IMPROTANTE.
+
+? = significa que ya le preguntó, bancarizar / sin bancarizar SI/NO
+
+
+por nuevos clientes, PEDIR DATOS FALTANTES, CONST, NUMERO DE WHATS, ?
+
+
+
+modulo de DEUDAS, para agregarle al mes anterior, meses anteriores, para tener enc uenta a cobros futuros	
+
+
+login CONTRASEÑA 
+
+
+
+
+ENTREGADO, RESUMEN DE VENTA, COLUMNA ACTUALIZABLE CON CHECKBOX

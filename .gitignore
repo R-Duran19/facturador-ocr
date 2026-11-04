@@ -1,0 +1,44 @@
+# ===== SECRETOS (nunca commitear) =====
+.env
+.env.*
+!.env.example
+service_account.json
+*-service-account*.json
+credentials*.json
+
+# ===== DATOS DE NEGOCIO (facturas y clientes reales) =====
+facturas.db
+facturas.db-wal
+facturas.db-shm
+backups/
+archivos/
+archivos_test/
+exports/
+septiembre 2026/
+septiembre 2026.rar
+docs/EXCELS/
+docs/excels/
+*.xlsx
+*.xls
+*.rar
+*.zip
+
+# ===== PYTHON =====
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# ===== LOGS Y TEMPORALES =====
+*.log
+temp/
+nul
+
+# ===== SISTEMA / EDITORES =====
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
