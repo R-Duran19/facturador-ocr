@@ -7,6 +7,8 @@ from typing import Callable
 from nicegui import app, ui
 
 import config
+import db
+from webui import nav
 
 __all__ = ["pagina", "TITULOS"]
 
@@ -86,15 +88,36 @@ def _cerrar_sesion() -> None:
     ui.navigate.to("/")
 
 
-def _item_menu(ruta: str, nombre: str, icono: str, activa: bool) -> None:
-    if activa:
-        ui.button(nombre, icon=icono, on_click=lambda r=ruta: ui.navigate.to(r)).props(
-            "unelevated no-caps align=left color=primary text-color=white"
-        ).classes("w-full")
-    else:
-        ui.button(nombre, icon=icono, on_click=lambda r=ruta: ui.navigate.to(r)).props(
-            "flat align=left no-caps"
-        ).classes("w-full")
+def _clientes_pendientes() -> int:
+    """Cantidad de clientes con % Venta o WhatsApp contacto sin completar."""
+    try:
+        n = 0
+        for c in db.leer_clientes():
+            try:
+                pct = float(c.get("Pct_Venta") or 0)
+            except (TypeError, ValueError):
+                pct = 0.0
+            if pct <= 0 or not str(c.get("Contacto", "")).strip():
+                n += 1
+        return n
+    except Exception:
+        return 0
+
+
+def _ir_clientes(aviso) -> None:
+    app.storage.user["ir_clientes"] = True
+    aviso.close()
+    ui.navigate.to("/configuracion")
+
+
+def _item_menu(ruta: str, nombre: str, icono: str, activa: bool, pendientes: int = 0) -> None:
+    props = "unelevated no-caps align=left color=primary text-color=white" if activa else "flat align=left no-caps"
+    boton = ui.button(nombre, icon=icono, on_click=lambda r=ruta: ui.navigate.to(r)).props(props).classes("w-full")
+    if pendientes:
+        with boton:
+            ui.badge(str(pendientes)).props("color=red-8 text-color=white rounded-borders").classes(
+                "q-ml-auto"
+            ).tooltip(f"{pendientes} cliente(s) con datos pendientes")
 
 
 def _chrome(titulo: str, ruta: str) -> None:
@@ -103,6 +126,7 @@ def _chrome(titulo: str, ruta: str) -> None:
         "<style>.text-h5{font-weight:700 !important;} "
         ".q-card{border-radius:12px;} .nicegui-content{max-width:1400px;}</style>"
     )
+    ui.keyboard.on_key("Alt+ArrowLeft", lambda _: nav.atras())
     oscuro = ui.dark_mode()
     with ui.header().classes("items-center"):
         ui.button(icon="menu", on_click=lambda: drawer.toggle()).props("flat color=white")
@@ -110,6 +134,9 @@ def _chrome(titulo: str, ruta: str) -> None:
         ui.label("Facturador").classes("text-white text-lg font-bold")
         ui.space()
         ui.label(titulo).classes("text-white/60 text-sm")
+        ui.button(icon="arrow_back", on_click=lambda: nav.atras()).props("flat round color=white").tooltip(
+            "Volver atrás (Alt + ←)"
+        )
         ui.button(icon="dark_mode", on_click=oscuro.toggle).props("flat round color=white")
         if config.APP_PASSWORD:
             ui.button(icon="logout", on_click=_cerrar_sesion).props("flat round color=white")
@@ -120,8 +147,36 @@ def _chrome(titulo: str, ruta: str) -> None:
                 _item_menu(r, nombre, icono, r == ruta)
             ui.separator().classes("q-my-sm")
             ui.label("Ajustes").classes("text-xs opacity-50 q-px-md")
+            pendientes_cli = _clientes_pendientes()
             for r, nombre, icono in _MENU_CONFIG:
-                _item_menu(r, nombre, icono, r == ruta)
+                _item_menu(r, nombre, icono, r == ruta, pendientes_cli)
+
+    aviso_hoy = time.strftime("%Y-%m-%d")
+    if pendientes_cli and app.storage.user.get("aviso_clientes_dia") != aviso_hoy:
+        app.storage.user["aviso_clientes_dia"] = aviso_hoy
+        with ui.dialog() as aviso, ui.card().classes("w-full max-w-[440px]"):
+            with ui.row().classes("w-full items-center gap-2"):
+                ui.icon("notifications_active", color="red-8").classes("text-3xl")
+                ui.label("Clientes por completar").classes("text-lg font-bold")
+            ui.label(
+                f"Tenés {pendientes_cli} cliente(s) con datos pendientes (% Venta o WhatsApp contacto). "
+                "Completalos para que los reportes y WhatsApp salgan bien."
+            ).classes("text-sm")
+            ui.label("(Este aviso se cierra solo en unos segundos, o tocá fuera / Después)").classes(
+                "text-xs opacity-50"
+            )
+            with ui.row().classes("w-full justify-end gap-2 q-mt-sm"):
+                ui.button("Después", on_click=aviso.close).props("flat dense")
+                ui.button(
+                    "Ir a clientes",
+                    icon="badge",
+                    on_click=lambda: _ir_clientes(aviso),
+                ).props("unelevated dense color=primary")
+        aviso.open()
+        ui.run_javascript(
+            "setTimeout(() => { const b = [...document.querySelectorAll('.q-dialog .q-btn')]"
+            ".find(x => x.textContent.includes('Después')); if (b) b.click(); }, 7000);"
+        )
     with ui.column().classes("w-full q-pa-md gap-4"):
         yield
 
@@ -146,6 +201,7 @@ def pagina(ruta: str) -> Callable:
             if not _autenticado():
                 _render_login()
                 return
+            nav.registrar(ruta)
             with _chrome_ctx(TITULOS.get(ruta, ""), ruta):
                 builder()
 

@@ -13,6 +13,7 @@ import db
 import exportador
 import pdf_reportes
 import reportes
+from webui import nav, pdf_url
 from webui.componentes import confirmar, input_fecha, tarjeta_metrica
 from webui.plantilla import pagina
 
@@ -48,6 +49,16 @@ def pagina_gestion():
     ).classes("w-56")
     breadcrumb = ui.row().classes("w-full items-center gap-1 text-sm")
     cont = ui.column().classes("w-full gap-4")
+
+    nav.registrar("/gestion", mes=estado["mes"], vista="mes")
+    _rest = nav.restaurar("/gestion")
+    if _rest:
+        if _rest.get("mes") and _rest["mes"] in meses:
+            estado["mes"] = _rest["mes"]
+            sel_mes.set_value(_rest["mes"])
+        estado["vista"] = _rest.get("vista") or "mes"
+        estado["proveedor"] = _rest.get("proveedor")
+        estado["cliente"] = _rest.get("cliente")
 
     def _mes():
         return estado["mes"]
@@ -95,11 +106,15 @@ def pagina_gestion():
         estado["vista"] = vista
         estado["proveedor"] = clave if vista == "proveedor" else None
         estado["cliente"] = clave if vista == "cliente" else None
+        nav.registrar(
+            "/gestion", mes=estado["mes"], vista=vista, proveedor=estado["proveedor"], cliente=estado["cliente"]
+        )
         pintar()
 
     def _ir_cliente(cliente):
         estado["vista"] = "cliente"
         estado["cliente"] = cliente
+        nav.registrar("/gestion", mes=estado["mes"], vista="cliente", proveedor=None, cliente=cliente)
         pintar()
 
     # ============ VISTA MES: tarjetas de proveedores ============
@@ -180,86 +195,167 @@ def pagina_gestion():
                 ui.label("Sin facturas de este proveedor en el mes.").classes("opacity-50")
                 return
 
-            anchos = [12, 12, 14, 14, 10, 10, 16, 10, 10, 16, 16, 14]
-            encabezado = ["Fecha", "NIT", "Factura N", "Destino", "%Comp", "%Vta", "Monto", "A pagar", "A cobrar", "Utilidad", "Estado pago", "Venta"]
-            pdf = ui.table(
-                columns=[
-                    {"name": c[0], "label": c[1], "field": c[0], "align": "left" if i < 3 else "right"}
-                    for i, c in enumerate(
-                        [
-                            ("fecha", "Fecha"),
-                            ("nit", "NIT"),
-                            ("factura", "Factura N"),
-                            ("destino", "Cliente"),
-                            ("pct_c", "% Comp"),
-                            ("pct_v", "% Vta"),
-                            ("monto", "Monto"),
-                            ("apagar", "A pagar"),
-                            ("acobrar", "A cobrar"),
-                            ("utilidad", "Utilidad"),
-                            ("estado", "Estado pago"),
-                            ("venta", "Venta"),
-                        ]
-                    )
-                ],
-                rows=[],
-                row_key="ID",
-                selection="single",
-                pagination={"rowsPerPage": 0},
-                on_select=lambda e: _abrir_factura(
-                    next((f for f in facturas if f["ID"] == (e.selection[0]["ID"] if e.selection else None)), None),
-                    proveedor,
-                ),
-            ).classes("w-full").props("flat dense bordered")
+            COLUMNAS_DETALLE = [
+                ("fecha", "Fecha", "left"),
+                ("nit", "NIT", "left"),
+                ("factura", "Factura N", "left"),
+                ("destino", "Cliente", "left"),
+                ("pct_c", "% Comp", "right"),
+                ("pct_v", "% Vta", "right"),
+                ("monto", "Monto", "right"),
+                ("apagar", "A pagar", "right"),
+                ("acobrar", "A cobrar", "right"),
+                ("utilidad", "Utilidad", "right"),
+                ("estado", "Estado pago", "center"),
+                ("venta", "Venta", "center"),
+            ]
+            COLUMNAS_COMPACTO = [
+                ("cliente", "Cliente", "left"),
+                ("n", "Facturas", "right"),
+                ("pct_c", "% Comp", "right"),
+                ("pct_v", "% Vta", "right"),
+                ("monto", "Monto", "right"),
+                ("apagar", "A pagar", "right"),
+                ("acobrar", "A cobrar", "right"),
+                ("utilidad", "Utilidad", "right"),
+                ("estado", "Estado pago", "center"),
+                ("venta", "Venta", "center"),
+            ]
 
-            filas = []
-            tot_monto = tot_pagar = tot_cobrar = tot_util = 0.0
-            for f in facturas:
+            def _datos_factura(f):
                 v = _venta_de(f, ventas)
-                destino = v["Cliente_Razon_Social"] if v else "—"
+                destino = v["Cliente_Razon_Social"] if v else (f.get("Razon_Social_Cliente") or "—")
                 pct_c = float(f.get("Porcentaje_Compra") or 0)
                 pct_v = _pct_venta_de(f, ventas)
                 a_pagar = f["Monto_Total"] * pct_c / 100.0
                 a_cobrar = f["Monto_Total"] * pct_v / 100.0
-                tot_monto += f["Monto_Total"]
-                tot_pagar += a_pagar
-                tot_cobrar += a_cobrar
-                tot_util += a_cobrar - a_pagar
-                filas.append(
-                    {
-                        "ID": f["ID"],
-                        "fecha": f["Fecha_Emision"] or "-",
-                        "nit": f["NIT_Emisor"] or "-",
-                        "factura": f["Nro_Factura"] or "-",
-                        "destino": destino,
-                        "pct_c": f"{pct_c:g}%",
-                        "pct_v": f"{pct_v:g}%",
-                        "monto": f"{f['Monto_Total']:,.2f}",
-                        "apagar": f"{a_pagar:,.2f}",
-                        "acobrar": f"{a_cobrar:,.2f}",
-                        "utilidad": f"{a_cobrar - a_pagar:,.2f}",
-                        "estado": f["Estado_Pago"],
-                        "venta": (v["Estado_Cobro"] if v else "sin venta"),
-                    }
-                )
-            filas.append(
-                {
-                    "ID": "__tot__",
-                    "fecha": "TOTALES",
-                    "nit": "",
-                    "factura": "",
-                    "destino": "",
-                    "pct_c": "",
-                    "pct_v": "",
-                    "monto": f"{tot_monto:,.2f}",
-                    "apagar": f"{tot_pagar:,.2f}",
-                    "acobrar": f"{tot_cobrar:,.2f}",
-                    "utilidad": f"{tot_util:,.2f}",
-                    "estado": "",
-                    "venta": "",
+                return {
+                    "ID": f["ID"],
+                    "fecha": f["Fecha_Emision"] or "-",
+                    "nit": f["NIT_Emisor"] or "-",
+                    "factura": f["Nro_Factura"] or "-",
+                    "destino": destino,
+                    "pct_c": pct_c,
+                    "pct_v": pct_v,
+                    "monto": f["Monto_Total"],
+                    "apagar": a_pagar,
+                    "acobrar": a_cobrar,
+                    "utilidad": a_cobrar - a_pagar,
+                    "estado": f["Estado_Pago"],
+                    "venta": (v["Estado_Cobro"] if v else "sin venta"),
                 }
-            )
-            pdf.update_rows(filas)
+
+            datos = [_datos_factura(f) for f in facturas]
+            tot_monto = sum(d["monto"] for d in datos)
+            tot_pagar = sum(d["apagar"] for d in datos)
+            tot_cobrar = sum(d["acobrar"] for d in datos)
+            tot_util = tot_cobrar - tot_pagar
+            tot = {"monto": tot_monto, "apagar": tot_pagar, "acobrar": tot_cobrar, "utilidad": tot_util}
+
+            def _fmt_num(x):
+                return f"{x:,.2f}"
+
+            def _fmt_pct(x):
+                return f"{round(x, 4):g}%"
+
+            def _valor_uniforme(valores):
+                unicos = set(valores)
+                return next(iter(unicos)) if len(unicos) == 1 else "MIXTO"
+
+            def _fila_totales(columnas, n):
+                fila = {clave: "" for clave, _, _ in columnas}
+                fila[columnas[0][0]] = "TOTALES"
+                fila["n"] = str(n)
+                for clave in ("monto", "apagar", "acobrar", "utilidad"):
+                    fila[clave] = _fmt_num(tot[clave])
+                return fila
+
+            def _armar_columnas(columnas):
+                return [
+                    {"name": clave, "label": etiqueta, "field": clave, "align": alineacion}
+                    for clave, etiqueta, alineacion in columnas
+                ]
+
+            modo = {"valor": "Compacto"}
+            cont_tabla = ui.column().classes("w-full")
+
+            def _pintar_tabla():
+                cont_tabla.clear()
+                with cont_tabla:
+                    if modo["valor"] == "Compacto":
+                        grupos = {}
+                        for d in datos:
+                            grupos.setdefault(d["destino"], []).append(d)
+                        filas = []
+                        for cliente, grupo in sorted(grupos.items(), key=lambda kv: kv[0].lower()):
+                            monto = sum(g["monto"] for g in grupo)
+                            pagar = sum(g["apagar"] for g in grupo)
+                            cobrar = sum(g["acobrar"] for g in grupo)
+                            filas.append(
+                                {
+                                    "cliente": cliente,
+                                    "n": str(len(grupo)),
+                                    "pct_c": _fmt_pct(pagar / monto * 100 if monto else 0),
+                                    "pct_v": _fmt_pct(cobrar / monto * 100 if monto else 0),
+                                    "monto": _fmt_num(monto),
+                                    "apagar": _fmt_num(pagar),
+                                    "acobrar": _fmt_num(cobrar),
+                                    "utilidad": _fmt_num(cobrar - pagar),
+                                    "estado": _valor_uniforme(g["estado"] for g in grupo),
+                                    "venta": _valor_uniforme(g["venta"] for g in grupo),
+                                }
+                            )
+                        filas.append(_fila_totales(COLUMNAS_COMPACTO, len(datos)))
+                        ui.table(
+                            columns=_armar_columnas(COLUMNAS_COMPACTO),
+                            rows=filas,
+                            row_key="cliente",
+                            pagination={"rowsPerPage": 0},
+                        ).classes("w-full").props("flat dense bordered")
+                    else:
+                        filas = [
+                            {
+                                "ID": d["ID"],
+                                "fecha": d["fecha"],
+                                "nit": d["nit"],
+                                "factura": d["factura"],
+                                "destino": d["destino"],
+                                "pct_c": _fmt_pct(d["pct_c"]),
+                                "pct_v": _fmt_pct(d["pct_v"]),
+                                "monto": _fmt_num(d["monto"]),
+                                "apagar": _fmt_num(d["apagar"]),
+                                "acobrar": _fmt_num(d["acobrar"]),
+                                "utilidad": _fmt_num(d["utilidad"]),
+                                "estado": d["estado"],
+                                "venta": d["venta"],
+                            }
+                            for d in datos
+                        ]
+                        filas.append(_fila_totales(COLUMNAS_DETALLE, len(datos)))
+                        ui.table(
+                            columns=_armar_columnas(COLUMNAS_DETALLE),
+                            rows=filas,
+                            row_key="ID",
+                            selection="single",
+                            pagination={"rowsPerPage": 0},
+                            on_select=lambda e: _abrir_factura(
+                                next(
+                                    (f for f in facturas if f["ID"] == (e.selection[0]["ID"] if e.selection else None)),
+                                    None,
+                                ),
+                                proveedor,
+                            ),
+                        ).classes("w-full").props("flat dense bordered")
+
+            with ui.row().classes("w-full items-center gap-2"):
+                ui.label("Vista:").classes("text-sm opacity-60")
+                ui.toggle(
+                    ["Compacto", "Detallado"],
+                    value="Compacto",
+                    on_change=lambda e: (modo.update({"valor": e.value}), _pintar_tabla()),
+                ).props("dense outline")
+            _pintar_tabla()
+
             with ui.row().classes("w-full flex-wrap gap-x-8 gap-y-1 q-px-sm text-sm"):
                 ui.label(f"Facturado: Bs {tot_monto:,.2f}")
                 ui.label(f"A pagarle: Bs {tot_pagar:,.2f}").classes("text-negative font-semibold")
@@ -402,11 +498,11 @@ def pagina_gestion():
                 ).classes("w-full").props("flat dense bordered")
 
             with ui.row().classes("w-full gap-2 q-mt-sm"):
-                ui.button(
-                    "📄 PDF de la empresa",
-                    icon="picture_as_pdf",
-                    on_click=lambda: _descargar_pdf_empresa(cliente),
-                ).props("unelevated dense")
+                with ui.link(target=pdf_url.url_empresa(_mes(), cliente), new_tab=True).classes(
+                    "row items-center gap-1 text-primary text-sm font-semibold no-underline"
+                ):
+                    ui.icon("picture_as_pdf", size="xs")
+                    ui.label("PDF de la empresa (pestaña nueva)")
 
         ui.label("Cobros registrados").classes("font-semibold text-sm q-mt-sm")
         cont_cobros = ui.column().classes("w-full gap-2")
@@ -481,28 +577,21 @@ def pagina_gestion():
             ui.notify("Cobro registrado.", type="positive")
             pintar()
 
-    def _descargar_pdf_empresa(cliente: str):
-        datos = pdf_reportes.pdf_empresa(cliente, _mes())
-        ui.download(datos, filename=f"{cliente} - {_mes()}.pdf")
-        ui.notify("PDF generado.", type="positive")
-
-    # ============ REPORTES FINALES (al pie, siempre) ============
-
     def _seccion_reportes():
         ui.label("📊 Reportes finales del mes").classes("font-semibold text-lg")
         with ui.row().classes("w-full flex-wrap gap-2"):
             ui.button("Excel de control", icon="table_view", on_click=lambda: _excel()).props("flat")
-            ui.button("PDF resumen", icon="picture_as_pdf", on_click=lambda: _pdf_res()).props("flat")
+            with ui.link(target=pdf_url.url_resumen(_mes()), new_tab=True).classes(
+                "row items-center gap-1 text-primary text-sm font-semibold no-underline"
+            ):
+                ui.icon("picture_as_pdf", size="xs")
+                ui.label("PDF resumen (pestaña nueva)")
             ui.button("PDFs por empresa (.zip)", icon="folder_zip", on_click=lambda: _pdf_zip()).props("unelevated")
 
         def _excel():
             datos, nombre = exportador.exportar_reportes_mes(_mes())
             ui.download(datos, filename=nombre)
             ui.notify("Excel generado.", type="positive")
-
-        def _pdf_res():
-            ui.download(pdf_reportes.pdf_resumen_mes(_mes()), filename=f"control {_mes()}.pdf")
-            ui.notify("PDF generado.", type="positive")
 
         def _pdf_zip():
             datos, nombre = pdf_reportes.pdfs_por_empresa_zip(_mes())

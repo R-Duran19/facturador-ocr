@@ -10,6 +10,7 @@ from datetime import date
 from nicegui import ui
 
 import db
+from webui import nav, pdf_url
 from webui.componentes import confirmar, input_fecha
 from webui.plantilla import pagina
 
@@ -26,8 +27,85 @@ COLUMNAS_FACTURAS = [
     {"name": "cobrar", "label": "A cobrar", "field": "cobrar", "align": "right"},
 ]
 
+_CLAVES_SUMA = ("monto", "apagar", "acobrar", "utilidad")
 
-@pagina("/ventas")
+
+def _tabla_modo(cont, datos, cols_compacto, cols_detalle):
+    """Tabla con vista Compacta (agrupada) o Detallada, con fila de TOTALES."""
+    clave_grupo = cols_compacto[0][0]
+
+    def _fmt(x):
+        return f"{x:,.2f}"
+
+    def _total(cols, n):
+        fila = {clave: "" for clave, _, _ in cols}
+        fila[cols[0][0]] = "TOTALES"
+        if any(c[0] == "n" for c in cols):
+            fila["n"] = str(n)
+        for clave in _CLAVES_SUMA:
+            if any(c[0] == clave for c in cols):
+                fila[clave] = _fmt(sum(d.get(clave, 0) or 0 for d in datos))
+        return fila
+
+    modo = {"valor": "Compacto"}
+
+    def _pintar():
+        cont.clear()
+        with cont:
+            if modo["valor"] == "Compacto":
+                grupos = {}
+                for d in datos:
+                    grupos.setdefault(str(d.get(clave_grupo) or "—"), []).append(d)
+                filas = []
+                for nombre, grupo in sorted(grupos.items(), key=lambda kv: kv[0].lower()):
+                    fila = {clave: "" for clave, _, _ in cols_compacto}
+                    fila[clave_grupo] = nombre
+                    fila["n"] = str(len(grupo))
+                    for clave in _CLAVES_SUMA:
+                        if any(c[0] == clave for c in cols_compacto):
+                            fila[clave] = _fmt(sum(x.get(clave, 0) or 0 for x in grupo))
+                    numerador = "apagar" if grupo and "apagar" in grupo[0] else "acobrar"
+                    total_monto = sum(x.get("monto", 0) or 0 for x in grupo)
+                    pct = round(sum(x.get(numerador, 0) or 0 for x in grupo) / total_monto * 100, 4) if total_monto else 0
+                    fila["pct"] = f"{pct:g}%"
+                    filas.append(fila)
+                filas.append(_total(cols_compacto, len(datos)))
+                columnas, row_key = cols_compacto, clave_grupo
+            else:
+                filas = []
+                for d in datos:
+                    fila = {}
+                    for clave, _, _ in cols_detalle:
+                        valor = d.get(clave, "")
+                        if clave in _CLAVES_SUMA:
+                            fila[clave] = _fmt(valor)
+                        elif clave == "pct":
+                            fila[clave] = f"{valor:g}%"
+                        else:
+                            fila[clave] = valor
+                    filas.append(fila)
+                filas.append(_total(cols_detalle, len(datos)))
+                columnas, row_key = cols_detalle, "factura"
+            ui.table(
+                columns=[
+                    {"name": clave, "label": etiqueta, "field": clave, "align": alineacion}
+                    for clave, etiqueta, alineacion in columnas
+                ],
+                rows=filas,
+                row_key=row_key,
+                pagination={"rowsPerPage": 0},
+            ).classes("w-full").props("flat dense bordered")
+
+    with ui.row().classes("w-full items-center gap-2"):
+        ui.label("Vista:").classes("text-sm opacity-60")
+        ui.toggle(
+            ["Compacto", "Detallado"],
+            value="Compacto",
+            on_change=lambda e: (modo.update({"valor": e.value}), _pintar()),
+        ).props("dense outline")
+    _pintar()
+
+
 def _texto_whatsapp(ficha: dict) -> str:
     """Contacto de WhatsApp: prioriza el nombre (como lo tiene guardado el usuario) y agrega el telefono."""
     nombre = str(ficha.get("Contacto", "") or "").strip()
@@ -36,6 +114,7 @@ def _texto_whatsapp(ficha: dict) -> str:
     return " - ".join(partes) if partes else "—"
 
 
+@pagina("/ventas")
 def pagina_ventas():
     meses = sorted(set(db.listar_meses()), reverse=True) or ["—"]
     mes_ini = date.today().strftime("%Y_%m_")
@@ -50,6 +129,16 @@ def pagina_ventas():
         on_change=lambda e: (estado.update({"mes": e.value, "vista": "menu", "cliente": None, "proveedor": None}), pintar()),
     ).classes("w-52")
     breadcrumb = ui.row().classes("w-full items-center gap-1 text-sm")
+
+    nav.registrar("/ventas", mes=estado["mes"], vista="menu")
+    _rest = nav.restaurar("/ventas")
+    if _rest:
+        if _rest.get("mes") and _rest["mes"] in meses:
+            estado["mes"] = _rest["mes"]
+            sel_mes.set_value(_rest["mes"])
+        estado["vista"] = _rest.get("vista") or "menu"
+        estado["cliente"] = _rest.get("cliente")
+        estado["proveedor"] = _rest.get("proveedor")
     cont = ui.column().classes("w-full gap-4")
 
     # ---------- datos ----------
@@ -137,7 +226,7 @@ def pagina_ventas():
         venta["Entregado"] = "SI" if valor == "SI" else ""
         db.actualizar_venta(venta.get("Mes", estado["mes"]), venta)
         ui.notify("Entregado actualizado.", type="positive", timeout=1)
-        refrescar_ventas()
+        pintar()
 
     def _pct_venta_de(factura: dict, ventas: list) -> float:
         v = _venta_de(factura, ventas)
@@ -169,6 +258,7 @@ def pagina_ventas():
         estado["vista"] = vista
         estado["cliente"] = cliente
         estado["proveedor"] = proveedor
+        nav.registrar("/ventas", mes=estado["mes"], vista=vista, cliente=cliente, proveedor=proveedor)
         pintar()
 
     def pintar():
@@ -237,72 +327,251 @@ def pagina_ventas():
                 ui.label("Entrá acá para gestionar los pagos a cada proveedor ›").classes("text-xs opacity-50")
 
         deudas = _deudas_totales(excluir=estado["mes"])
-        if deudas:
-            empresas_deuda = len({v["Cliente_Razon_Social"] for v in deudas})
-            total_deuda = sum(v["Saldo"] for v in deudas)
-            with ui.card().classes("cursor-pointer w-full border-2").style("border-color: #B91C1C;").on(
-                "click", lambda: _ir("deudas")
-            ):
-                with ui.row().classes("w-full items-center gap-3"):
-                    ui.icon("warning", color="red").classes("text-4xl")
-                    ui.label("DEUDAS DE MESES ANTERIORES").classes("text-xl font-bold")
-                    ui.space()
-                    ui.badge(f"{len(deudas)} venta(s)", color="red").props("text-color=white")
+        manuales = [d for d in db.leer_deudas_manuales() if d["Saldo"] > 0.005]
+        hay_deudas = bool(deudas or manuales)
+        empresas_deuda = len({v["Cliente_Razon_Social"] for v in deudas} | {d["Cliente"] for d in manuales})
+        total_deuda = sum(v["Saldo"] for v in deudas) + sum(d["Saldo"] for d in manuales)
+        with ui.card().classes("cursor-pointer w-full border-2").style("border-color: #B91C1C;").on(
+            "click", lambda: _ir("deudas")
+        ):
+            with ui.row().classes("w-full items-center gap-3"):
+                ui.icon("warning", color="red" if hay_deudas else "grey").classes("text-4xl")
+                ui.label("DEUDAS DE MESES ANTERIORES").classes("text-xl font-bold")
+                ui.space()
+                if hay_deudas:
+                    ui.badge(f"{len(deudas) + len(manuales)} deuda(s)", color="red").props("text-color=white")
+                else:
+                    ui.badge("al día", color="grey").props("text-color=white")
+            if hay_deudas:
                 ui.label(
                     f"Empresas con saldo pendiente de otros meses: {empresas_deuda} · Por cobrar: Bs {total_deuda:,.2f}"
                 ).classes("text-sm")
-                ui.label("Entrá acá para gestionar esas deudas (registrar cobros, reclamar) ›").classes(
-                    "text-xs opacity-50"
+                if manuales:
+                    ui.label(
+                        f"Incluye Bs {sum(d['Saldo'] for d in manuales):,.2f} de deudas manuales cargadas a mano"
+                    ).classes("text-xs text-negative")
+            else:
+                ui.label("No hay deudas pendientes. Acá podés cargar deudas manuales de otros meses.").classes(
+                    "text-sm opacity-60"
                 )
+            ui.label("Entrá acá para gestionar esas deudas (registrar cobros, reclamar) ›").classes(
+                "text-xs opacity-50"
+            )
 
     # ---------- DEUDAS DE MESES ANTERIORES ----------
 
     def _vista_deudas():
         deudas = _deudas_totales()
-        ui.label("Deudas pendientes de meses anteriores").classes("font-semibold text-lg")
-        if not deudas:
-            ui.label("No hay deudas de meses anteriores. Todo al día. ✔").classes("opacity-50")
-            return
-        filas = []
-        for i, v in enumerate(sorted(deudas, key=lambda x: (x["Mes"], x["Cliente_Razon_Social"])), 1):
-            filas.append(
-                {
-                    "nro": str(i),
-                    "mes": v.get("mes_legible", v["Mes"]),
-                    "cliente": v["Cliente_Razon_Social"],
-                    "cobrar": f"{v['Precio_Cobrado']:,.2f}",
-                    "cobrado": f"{v['Total_Cobrado']:,.2f}",
-                    "saldo": f"{v['Saldo']:,.2f}",
-                    "estado": v["Estado_Cobro"],
-                    "ID_Venta": v["ID_Venta"],
-                }
+        with ui.row().classes("w-full justify-between items-center"):
+            ui.label("Deudas de meses anteriores").classes("font-semibold text-lg")
+            ui.button("➕ Agregar deuda manual", icon="post_add", on_click=_dialogo_deuda_manual).props(
+                "unelevated dense"
             )
-        ui.table(
-            columns=[
-                {"name": "nro", "label": "#", "field": "nro", "align": "center"},
-                {"name": "mes", "label": "Mes", "field": "mes", "align": "left"},
-                {"name": "cliente", "label": "Empresa", "field": "cliente", "align": "left"},
-                {"name": "cobrar", "label": "A cobrar", "field": "cobrar", "align": "right"},
-                {"name": "cobrado", "label": "Cobrado", "field": "cobrado", "align": "right"},
-                {"name": "saldo", "label": "Saldo", "field": "saldo", "align": "right"},
-                {"name": "estado", "label": "Estado", "field": "estado", "align": "center"},
-            ],
-            rows=filas,
-            row_key="ID_Venta",
-            selection="single",
-            pagination={"rowsPerPage": 15},
-            on_select=lambda e: (
-                estado.update(
+        ui.label("Ventas de otros meses con saldo pendiente").classes("text-sm opacity-60 q-mt-sm")
+        if not deudas:
+            ui.label("No hay ventas con saldo de meses anteriores. Todo al día. ✔").classes("opacity-50")
+        else:
+            filas = []
+            for i, v in enumerate(sorted(deudas, key=lambda x: (x["Mes"], x["Cliente_Razon_Social"])), 1):
+                filas.append(
                     {
-                        "vista": "deuda_detalle",
-                        "cliente": (e.selection[0]["cliente"] if e.selection else None),
-                        "mes_deuda": (next((f["Mes"] for f in deudas if f["ID_Venta"] == (e.selection[0]["ID_Venta"] if e.selection else None)), estado["mes"]) if e.selection else None),
+                        "nro": str(i),
+                        "mes": v.get("mes_legible", v["Mes"]),
+                        "cliente": v["Cliente_Razon_Social"],
+                        "cobrar": f"{v['Precio_Cobrado']:,.2f}",
+                        "cobrado": f"{v['Total_Cobrado']:,.2f}",
+                        "saldo": f"{v['Saldo']:,.2f}",
+                        "estado": v["Estado_Cobro"],
+                        "ID_Venta": v["ID_Venta"],
                     }
+                )
+            ui.table(
+                columns=[
+                    {"name": "nro", "label": "#", "field": "nro", "align": "center"},
+                    {"name": "mes", "label": "Mes", "field": "mes", "align": "left"},
+                    {"name": "cliente", "label": "Empresa", "field": "cliente", "align": "left"},
+                    {"name": "cobrar", "label": "A cobrar", "field": "cobrar", "align": "right"},
+                    {"name": "cobrado", "label": "Cobrado", "field": "cobrado", "align": "right"},
+                    {"name": "saldo", "label": "Saldo", "field": "saldo", "align": "right"},
+                    {"name": "estado", "label": "Estado", "field": "estado", "align": "center"},
+                ],
+                rows=filas,
+                row_key="ID_Venta",
+                selection="single",
+                pagination={"rowsPerPage": 15},
+                on_select=lambda e: (
+                    estado.update(
+                        {
+                            "vista": "deuda_detalle",
+                            "cliente": (e.selection[0]["cliente"] if e.selection else None),
+                            "mes_deuda": (next((f["Mes"] for f in deudas if f["ID_Venta"] == (e.selection[0]["ID_Venta"] if e.selection else None)), estado["mes"]) if e.selection else None),
+                        }
+                    ),
+                    nav.registrar(
+                        "/ventas",
+                        mes=estado["mes"],
+                        vista="deuda_detalle",
+                        cliente=estado["cliente"],
+                        proveedor=None,
+                    ),
+                    pintar(),
                 ),
-                pintar(),
-            ),
-        ).classes("w-full").props("flat dense bordered")
-        ui.label("Seleccioná una fila para gestionar el cobro de esa deuda.").classes("text-xs opacity-50")
+            ).classes("w-full").props("flat dense bordered")
+            ui.label("Seleccioná una fila para gestionar el cobro de esa deuda.").classes("text-xs opacity-50")
+
+        # ---------- DEUDAS MANUALES ----------
+
+        manuales = db.leer_deudas_manuales()
+        ui.separator().classes("q-my-sm")
+        ui.label("Deudas manuales (cargadas a mano)").classes("font-semibold text-lg")
+        if not manuales:
+            ui.label(
+                "Acá podés cargar deudas de meses anteriores que no están como ventas (ej: 'me debe Bs 500 de enero')."
+            ).classes("text-sm opacity-50")
+        else:
+            sel = {"id": None}
+            filas = [
+                {
+                    "cliente": d["Cliente"],
+                    "mes": d["Mes_Origen"] or "—",
+                    "concepto": d["Concepto"] or "—",
+                    "monto": f"{d['Monto']:,.2f}",
+                    "cobrado": f"{d['Cobrado']:,.2f}",
+                    "saldo": f"{d['Saldo']:,.2f}",
+                    "estado": d["Estado"],
+                    "ID_Deuda": d["ID_Deuda"],
+                }
+                for d in manuales
+            ]
+            ui.table(
+                columns=[
+                    {"name": "cliente", "label": "Cliente", "field": "cliente", "align": "left"},
+                    {"name": "mes", "label": "Mes deuda", "field": "mes", "align": "left"},
+                    {"name": "concepto", "label": "Concepto", "field": "concepto", "align": "left"},
+                    {"name": "monto", "label": "Monto", "field": "monto", "align": "right"},
+                    {"name": "cobrado", "label": "Cobrado", "field": "cobrado", "align": "right"},
+                    {"name": "saldo", "label": "Saldo", "field": "saldo", "align": "right"},
+                    {"name": "estado", "label": "Estado", "field": "estado", "align": "center"},
+                ],
+                rows=filas,
+                row_key="ID_Deuda",
+                selection="single",
+                pagination={"rowsPerPage": 15},
+                on_select=lambda e: sel.update({"id": e.selection[0]["ID_Deuda"] if e.selection else None}),
+            ).classes("w-full").props("flat dense bordered")
+            with ui.row().classes("w-full flex-wrap gap-x-8 gap-y-1 q-px-sm text-sm"):
+                ui.label(f"Cargado: Bs {sum(d['Monto'] for d in manuales):,.2f}")
+                ui.label(f"Cobrado: Bs {sum(d['Cobrado'] for d in manuales):,.2f}")
+                ui.label(f"Pendiente: Bs {sum(d['Saldo'] for d in manuales):,.2f}").classes("font-bold text-negative")
+            with ui.row().classes("w-full gap-2"):
+                ui.button(
+                    "Registrar cobro de la seleccionada",
+                    icon="payments",
+                    on_click=lambda: _cobrar_deuda_manual(sel),
+                ).props("unelevated dense no-caps color=primary")
+                ui.button(
+                    "Eliminar seleccionada",
+                    icon="delete",
+                    on_click=lambda: _eliminar_deuda_manual(sel),
+                ).props("flat dense no-caps color=negative")
+
+    def _dialogo_deuda_manual():
+        nombres = [c["Nombre_Razon_Social"] for c in db.leer_clientes() if c["Nombre_Razon_Social"]]
+        hoy = date.today()
+        nombres_mes = [
+            "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+            "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+        ]
+        opciones_mes = [f"{nombres_mes[m - 1]} {a}" for a in (hoy.year - 1, hoy.year, hoy.year + 1) for m in range(1, 13)]
+        mes_actual = f"{nombres_mes[hoy.month - 1]} {hoy.year}"
+        with ui.dialog() as dialogo, ui.card().classes("w-full max-w-[520px]"):
+            ui.label("Nueva deuda manual").classes("text-lg font-bold")
+            ui.label("Para deudas de meses anteriores que no están cargadas como ventas del sistema.").classes(
+                "text-xs opacity-50"
+            )
+            e_cliente = ui.select(
+                nombres + ["➕ Otro..."],
+                value=nombres[0] if nombres else "➕ Otro...",
+                label="Cliente",
+                new_value_mode="add",
+            ).classes("w-full")
+            e_mes = ui.select(
+                opciones_mes,
+                value=mes_actual,
+                label="Mes de la deuda",
+                new_value_mode="add",
+            ).classes("w-full")
+            e_monto = ui.number("Monto que debe (Bs)", value=0.0, format="%.2f")
+            e_concepto = ui.input("Concepto / nota (opcional)").classes("w-full")
+
+            def _guardar():
+                cliente = (e_cliente.value or "").strip()
+                if not cliente or cliente == "➕ Otro...":
+                    ui.notify("Elegí o escribí el cliente.", type="warning")
+                    return
+                if not e_monto.value or e_monto.value <= 0:
+                    ui.notify("Monto inválido.", type="warning")
+                    return
+                db.agregar_deuda_manual(cliente, e_mes.value or "", "", e_monto.value, e_concepto.value or "")
+                ui.notify(f"Deuda de {cliente} agregada.", type="positive")
+                dialogo.close()
+                pintar()
+
+            with ui.row().classes("w-full justify-end gap-2 q-mt-sm"):
+                ui.button("Cancelar", on_click=dialogo.close).props("flat dense")
+                ui.button("Guardar deuda", icon="save", on_click=_guardar).props("unelevated dense color=primary")
+        dialogo.open()
+
+    def _cobrar_deuda_manual(sel):
+        deuda = next((d for d in db.leer_deudas_manuales() if d["ID_Deuda"] == sel.get("id")), None)
+        if not deuda:
+            ui.notify("Seleccioná una deuda de la tabla.", type="warning")
+            return
+        if deuda["Saldo"] <= 0.005:
+            ui.notify("Esa deuda ya está cobrada.", type="info")
+            return
+        with ui.dialog() as dialogo, ui.card().classes("w-full max-w-[460px]"):
+            ui.label(f"Cobrar deuda · {deuda['Cliente']}").classes("text-lg font-bold")
+            ui.label(
+                f"{deuda['Concepto'] or 'Deuda manual'} · {deuda['Mes_Origen'] or 'sin mes'} · Saldo: Bs {deuda['Saldo']:,.2f}"
+            ).classes("text-sm opacity-70")
+            f = input_fecha("Fecha")
+            m = ui.number("Monto que está pagando", value=deuda["Saldo"], format="%.2f")
+            met = ui.select(METODOS, value="QR", label="Método", new_value_mode="add").classes("w-44")
+            n = ui.input("Nota (opcional)")
+
+            def _registrar():
+                if not m.value or m.value <= 0:
+                    ui.notify("Monto inválido.", type="warning")
+                    return
+                db.registrar_cobro_deuda(deuda["ID_Deuda"], m.value, (f.value or "").strip() or None, n.value or "", met.value or "")
+                ui.notify("Cobro registrado.", type="positive")
+                dialogo.close()
+                pintar()
+
+            with ui.row().classes("w-full justify-end gap-2 q-mt-sm"):
+                ui.button("Cancelar", on_click=dialogo.close).props("flat dense")
+                ui.button("Registrar cobro", icon="payments", on_click=_registrar).props("unelevated dense color=primary")
+        dialogo.open()
+
+    def _eliminar_deuda_manual(sel):
+        deuda = next((d for d in db.leer_deudas_manuales() if d["ID_Deuda"] == sel.get("id")), None)
+        if not deuda:
+            ui.notify("Seleccioná una deuda de la tabla.", type="warning")
+            return
+
+        def accion():
+            if not db.eliminar_deuda_manual(deuda["ID_Deuda"]):
+                ui.notify("No se puede: tiene cobros registrados. Eliminá primero sus cobros.", type="warning")
+                return
+            ui.notify("Deuda eliminada.", type="positive")
+            pintar()
+
+        confirmar(
+            f"¿Eliminar la deuda de {deuda['Cliente']} por Bs {deuda['Monto']:,.2f}?",
+            accion,
+            "Eliminar",
+        )
 
     # ---------- COBROS: lista de empresas ----------
 
@@ -374,9 +643,8 @@ def pagina_ventas():
             "body-cell-entregado",
             """
             <q-td key="entregado" :props="props">
-                <q-toggle
+                <q-checkbox
                     dense
-                    size="sm"
                     :model-value="props.row.entregado === 'SI'"
                     @update:model-value="v => $parent.$emit('toggle_entregado_cliente', props.row.cliente + '|' + (v ? 'SI' : ''))"
                 />
@@ -395,7 +663,7 @@ def pagina_ventas():
                 v["Entregado"] = valor
                 db.actualizar_venta(estado["mes"], v)
         ui.notify("Entregado actualizado para " + cliente + ".", type="positive", timeout=1)
-        refrescar_ventas()
+        pintar()
         ui.label("Seleccioná una empresa para ver el detalle de sus facturas y gestionar los cobros.").classes(
             "text-xs opacity-50"
         )
@@ -439,43 +707,44 @@ def pagina_ventas():
                 ui.label(f"Bancarizado: {ficha.get('Bancarizado', '¿?')}").classes("opacity-70")
 
             ui.label("Detalle de facturas (como ventas completas)").classes("font-semibold text-sm q-mt-sm")
-            if facturas:
-                anchos = [16, 16, 16, 14, 14, 16]
-                ui.table(
-                    columns=[
-                        {"name": c[0], "label": c[1], "field": c[0], "align": "left" if i < 3 else "right"}
-                        for i, c in enumerate(
-                            [
-                                ("fecha", "Fecha"),
-                                ("proveedor", "Proveedor"),
-                                ("factura", "Factura N"),
-                                ("monto", "Monto"),
-                                ("pct", "%"),
-                                ("acobrar", "A cobrar"),
-                            ]
-                        )
-                    ],
-                    rows=[
-                        {
-                            "fecha": f["Fecha_Emision"] or "-",
-                            "proveedor": f["Proveedor_Asignado"],
-                            "factura": f["Nro_Factura"] or "-",
-                            "monto": f"{f['Monto_Total']:,.2f}",
-                            "pct": f"{_pct_venta_de(f, ventas):g}%",
-                            "acobrar": f"{f['Monto_Total'] * _pct_venta_de(f, ventas) / 100:,.2f}",
-                        }
-                        for f in facturas
-                    ],
-                    row_key="factura",
-                    pagination=12,
-                ).classes("w-full").props("flat dense bordered")
+            datos_tabla = [
+                {
+                    "fecha": f["Fecha_Emision"] or "-",
+                    "factura": f["Nro_Factura"] or "-",
+                    "proveedor": f["Proveedor_Asignado"] or "—",
+                    "monto": f["Monto_Total"],
+                    "pct": _pct_venta_de(f, ventas),
+                    "acobrar": f["Monto_Total"] * _pct_venta_de(f, ventas) / 100,
+                }
+                for f in facturas
+            ]
+            cont_tabla = ui.column().classes("w-full")
+            _tabla_modo(
+                cont_tabla,
+                datos_tabla,
+                [
+                    ("proveedor", "Proveedor", "left"),
+                    ("n", "Facturas", "right"),
+                    ("pct", "% Venta", "right"),
+                    ("monto", "Monto", "right"),
+                    ("acobrar", "A cobrar", "right"),
+                ],
+                [
+                    ("fecha", "Fecha", "left"),
+                    ("proveedor", "Proveedor", "left"),
+                    ("factura", "Factura N", "left"),
+                    ("pct", "% Venta", "right"),
+                    ("monto", "Monto", "right"),
+                    ("acobrar", "A cobrar", "right"),
+                ],
+            )
 
             with ui.row().classes("w-full gap-2 q-mt-sm"):
-                ui.button(
-                    "📄 PDF de la empresa",
-                    icon="picture_as_pdf",
-                    on_click=lambda: _descargar_pdf_empresa(cliente),
-                ).props("unelevated dense")
+                with ui.link(target=pdf_url.url_empresa(estado["mes"], cliente), new_tab=True).classes(
+                    "row items-center gap-1 text-primary text-sm font-semibold no-underline"
+                ):
+                    ui.icon("picture_as_pdf", size="xs")
+                    ui.label("PDF de la empresa (pestaña nueva)")
 
         # ---------- Registrar cobro (arriba, sin scrollear) ----------
 
@@ -578,16 +847,6 @@ def pagina_ventas():
 
         pintar_cobros()
 
-    def _descargar_pdf_empresa(cliente: str):
-        datos = pdf_reportes_proxy(cliente)
-        ui.download(datos, filename=f"{cliente} - {estado['mes']}.pdf")
-        ui.notify("PDF generado.", type="positive")
-
-    def pdf_reportes_proxy(cliente):
-        import pdf_reportes
-
-        return pdf_reportes.pdf_empresa(cliente, estado["mes"])
-
     # ---------- PAGOS: lista de proveedores ----------
 
     def _vista_pagos():
@@ -666,35 +925,40 @@ def pagina_ventas():
                 ui.label(f"Saldo: Bs {saldo:,.2f}").classes("font-bold")
 
             ui.label("Detalle de facturas (como compra)").classes("font-semibold text-sm q-mt-sm")
-            if facturas:
-                ui.table(
-                    columns=[
-                        {"name": c[0], "label": c[1], "field": c[0], "align": "left" if i < 3 else "right"}
-                        for i, c in enumerate(
-                            [
-                                ("fecha", "Fecha"),
-                                ("factura", "Factura N"),
-                                ("destino", "Empresa destino"),
-                                ("monto", "Monto"),
-                                ("pct", "% Compra"),
-                                ("apagar", "A pagar"),
-                            ]
-                        )
-                    ],
-                    rows=[
-                        {
-                            "fecha": f["Fecha_Emision"] or "-",
-                            "factura": f["Nro_Factura"] or "-",
-                            "destino": (_venta_de(f, ventas) or {}).get("Cliente_Razon_Social", "—"),
-                            "monto": f"{f['Monto_Total']:,.2f}",
-                            "pct": f"{float(f.get('Porcentaje_Compra') or 0):g}%",
-                            "apagar": f"{f['Monto_Total'] * (f.get('Porcentaje_Compra') or 0) / 100:,.2f}",
-                        }
-                        for f in facturas
-                    ],
-                    row_key="factura",
-                    pagination=12,
-                ).classes("w-full").props("flat dense bordered")
+            datos_tabla = [
+                {
+                    "fecha": f["Fecha_Emision"] or "-",
+                    "factura": f["Nro_Factura"] or "-",
+                    "cliente": (
+                        (_venta_de(f, ventas) or {}).get("Cliente_Razon_Social")
+                        or (f.get("Razon_Social_Cliente") or "—")
+                    ),
+                    "monto": f["Monto_Total"],
+                    "pct": float(f.get("Porcentaje_Compra") or 0),
+                    "apagar": f["Monto_Total"] * (f.get("Porcentaje_Compra") or 0) / 100,
+                }
+                for f in facturas
+            ]
+            cont_tabla = ui.column().classes("w-full")
+            _tabla_modo(
+                cont_tabla,
+                datos_tabla,
+                [
+                    ("cliente", "Cliente", "left"),
+                    ("n", "Facturas", "right"),
+                    ("pct", "% Comp", "right"),
+                    ("monto", "Monto", "right"),
+                    ("apagar", "A pagar", "right"),
+                ],
+                [
+                    ("fecha", "Fecha", "left"),
+                    ("factura", "Factura N", "left"),
+                    ("cliente", "Cliente", "left"),
+                    ("pct", "% Comp", "right"),
+                    ("monto", "Monto", "right"),
+                    ("apagar", "A pagar", "right"),
+                ],
+            )
 
         ui.label("Pagos registrados").classes("font-semibold text-sm q-mt-sm")
         cont_pagos = ui.column().classes("w-full gap-2")
