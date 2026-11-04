@@ -73,8 +73,10 @@ def input_fecha(label: str, valor: str = None) -> ui.input:
     return inp
 
 
-def tabla_con_busqueda(columnas: list, filas: list, clave: str, seleccion_handler=None, paginacion=15) -> tuple:
-    """Tabla con buscador integrado. Devuelve (tabla, buscador)."""
+def tabla_con_busqueda(
+    columnas: list, filas: list, clave: str, seleccion_handler=None, paginacion=15, resaltar_si: str = ""
+) -> tuple:
+    """Tabla con buscador integrado. resaltar_si: clave booleana por fila para pintarla en amarillo suave."""
     with ui.row().classes("w-full justify-end"):
         buscador = ui.input("Buscar...", placeholder="filtrar por cualquier columna").props(
             "outlined dense clearable"
@@ -87,6 +89,11 @@ def tabla_con_busqueda(columnas: list, filas: list, clave: str, seleccion_handle
         pagination={"rowsPerPage": paginacion},
         on_select=seleccion_handler,
     ).classes("w-full").props("flat dense bordered")
+    if resaltar_si and any(fila.get(resaltar_si) for fila in filas):
+        tabla.add_slot(
+            "body-cell",
+            '<q-td :props="props" :class="props.row.%s ? \'bg-amber-1\' : \'\'">{{ props.value }}</q-td>' % resaltar_si,
+        )
     buscador.on(
         "update:model-value",
         lambda e: tabla.props(f'filter="{str(e.args or "").replace(chr(34), chr(39))}"'),

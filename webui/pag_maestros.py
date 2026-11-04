@@ -138,31 +138,40 @@ def seccion_clientes():
         cont.clear()
         with cont:
             clientes = db.leer_clientes()
-            incompletos = [
-                c
-                for c in clientes
-                if not str(c.get("Telefono", "")).strip()
-                or not str(c.get("Rubro", "")).strip()
-                or not str(c.get("Contacto", "")).strip()
-            ]
+
+            def _faltantes(c):
+                faltan = []
+                try:
+                    pct = float(c.get("Pct_Venta") or 0)
+                except (TypeError, ValueError):
+                    pct = 0.0
+                if pct <= 0:
+                    faltan.append("% Venta")
+                if not str(c.get("Contacto", "")).strip():
+                    faltan.append("WhatsApp (contacto)")
+                return faltan
+
+            incompletos = [c for c in clientes if _faltantes(c)]
             if incompletos:
-                with ui.card().classes("w-full border-2").style("border-color: #F2C037;"):
+                with ui.card().classes("w-full border-2").style("border-color: #F2C037; background: #FFFBEB;"):
                     with ui.row().classes("w-full items-center gap-2"):
                         ui.icon("error_outline", color="amber-8")
                         ui.label(
-                            f"⚠ {len(incompletos)} cliente(s) con DATOS FALTANTES (Contacto WhatsApp, Rubro o Teléfono) — complétalos:"
+                            f"⚠ {len(incompletos)} cliente(s) con DATOS FALTANTES (% Venta o WhatsApp contacto) — tocá uno para completarlo:"
                         ).classes("font-semibold text-sm")
                     with ui.row().classes("w-full flex-wrap gap-2 q-px-sm"):
                         for c in incompletos[:12]:
-                            with ui.chip(icon="person"):
-                                faltan = []
-                                if not str(c.get("Contacto", "")).strip():
-                                    faltan.append("Contacto")
-                                if not str(c.get("Telefono", "")).strip():
-                                    faltan.append("Teléfono")
-                                if not str(c.get("Rubro", "")).strip():
-                                    faltan.append("Rubro")
-                                ui.label(f"{c['Nombre_Razon_Social']} (falta: {', '.join(faltan)})").classes("text-xs")
+                            ui.button(
+                                f"{c['Nombre_Razon_Social']} (falta: {', '.join(_faltantes(c))})",
+                                icon="edit",
+                                on_click=lambda c=c: _dialogo_cliente(c, pintar),
+                            ).props("flat dense no-caps text-color=amber-9").classes(
+                                "bg-amber-1 rounded-borders text-xs"
+                            )
+                        if len(incompletos) > 12:
+                            ui.label(f"… y {len(incompletos) - 12} más (filas resaltadas en la tabla)").classes(
+                                "text-xs opacity-60 self-center"
+                            )
 
             if not clientes:
                 ui.label("Sin clientes. Agregá el primero con el botón de arriba.").classes("opacity-50")
@@ -170,6 +179,7 @@ def seccion_clientes():
                 filas = [
                     {
                         **c,
+                        "_inc": bool(_faltantes(c)),
                         "pct": f"{c['Pct_Venta']:g}",
                         "whats": " - ".join(p for p in (str(c.get("Contacto", "") or "").strip(), str(c.get("Telefono", "") or "").strip()) if p) or "—",
                         "banc": c.get("Bancarizado", "¿?"),
@@ -181,6 +191,7 @@ def seccion_clientes():
                     filas,
                     "ID_Cliente",
                     seleccion_handler=lambda e: seleccion.update({"fila": e.selection[0] if e.selection else None}),
+                    resaltar_si="_inc",
                 )
             with ui.row().classes("w-full gap-2"):
                 ui.button("➕ Nuevo cliente", icon="person_add", on_click=lambda: _dialogo_cliente(None, pintar)).props("unelevated")
