@@ -139,13 +139,13 @@ def _chrome(titulo: str, ruta: str) -> None:
     oscuro = ui.dark_mode()
     with ui.header().classes("items-center"):
         ui.button(icon="menu", on_click=lambda: drawer.toggle()).props("flat color=white")
+        ui.button(icon="arrow_back", on_click=lambda: nav.atras()).props("flat round color=white").tooltip(
+            "Volver atrás (Alt + ←)"
+        )
         ui.icon("receipt_long").classes("text-white text-2xl")
         ui.label("Facturador").classes("text-white text-lg font-bold")
         ui.space()
         ui.label(titulo).classes("text-white/60 text-sm")
-        ui.button(icon="arrow_back", on_click=lambda: nav.atras()).props("flat round color=white").tooltip(
-            "Volver atrás (Alt + ←)"
-        )
         ui.button(icon="dark_mode", on_click=oscuro.toggle).props("flat round color=white")
         if config.APP_PASSWORD:
             ui.button(icon="logout", on_click=_cerrar_sesion).props("flat round color=white")

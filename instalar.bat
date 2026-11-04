@@ -61,6 +61,10 @@ if not exist ".env" (
 )
 
 echo.
+echo  Verificando instalacion...
+venv\Scripts\python.exe check_setup.py
+
+echo.
 echo ============================================
 echo  INSTALACION COMPLETA
 echo  Siguiente paso: ejecutar crear_acceso_directo.bat
