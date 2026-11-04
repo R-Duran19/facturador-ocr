@@ -4,6 +4,7 @@ from nicegui import ui
 
 import config
 import db
+import paquete_datos
 import respaldos
 
 def seccion_sistema():
@@ -78,6 +79,42 @@ def seccion_sistema():
         ui.label(
             f"Login: {'activado (password por .env)' if config.APP_PASSWORD else 'desactivado (APP_PASSWORD vacío)'}"
         ).classes("text-sm opacity-60")
+
+    with ui.card().classes("w-full border-2").style("border-color: var(--q-primary);"):
+        ui.label("📦 Paquete de datos (para pasar todo a otra computadora)").classes("font-semibold")
+        ui.label(
+            "Exporta el catálogo (clientes, proveedores, campos), las deudas manuales y los meses elegidos "
+            "CON sus PDFs en un .zip. En la otra computadora: clonar + instalar, y acá mismo importar ese .zip. "
+            "La importación crea un backup antes y no borra nada: solo agrega o actualiza."
+        ).classes("text-xs opacity-60")
+        opciones_mes = ["TODOS"] + db.listar_meses()
+        sel_paquete = ui.select(opciones_mes, value="TODOS", label="Qué exportar").classes("w-64")
+
+        def _exportar_paquete():
+            elegidos = None if sel_paquete.value == "TODOS" else [sel_paquete.value]
+            datos, nombre = paquete_datos.exportar(elegidos)
+            ui.download(datos, filename=nombre)
+            ui.notify(f"Paquete {nombre} generado ({len(datos) / 1e6:.1f} MB).", type="positive")
+
+        def _importar_paquete(e):
+            try:
+                contenido = e.content.read()
+                resumen = paquete_datos.importar(contenido)
+                ui.notify(
+                    "Importado ✔ · " + ", ".join(f"{k}: {v}" for k, v in resumen.items()),
+                    type="positive",
+                    timeout=8,
+                )
+            except Exception as ex:
+                ui.notify(f"No se pudo importar: {ex}", type="negative")
+
+        ui.button("Generar paquete .zip", icon="download", on_click=_exportar_paquete).props("unelevated")
+        ui.separator()
+        ui.label("Importar un paquete .zip en esta instalación:").classes("text-sm")
+        ui.upload(
+            on_upload=_importar_paquete,
+            auto_upload=True,
+        ).props("accept=.zip").classes("w-full")
 
     with ui.card().classes("w-full"):
         ui.label("Respaldos de la base de datos").classes("font-semibold")
