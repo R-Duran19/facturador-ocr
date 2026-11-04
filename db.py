@@ -146,6 +146,16 @@ CREATE TABLE IF NOT EXISTS cobros (
     creado_en TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_cobros_venta ON cobros(venta_id);
+CREATE TABLE IF NOT EXISTS deudas_manuales (
+    id TEXT PRIMARY KEY,
+    cliente TEXT NOT NULL,
+    mes_origen TEXT DEFAULT '',
+    fecha TEXT DEFAULT (date('now')),
+    concepto TEXT DEFAULT '',
+    monto REAL DEFAULT 0,
+    creado_en TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_deudas_cliente ON deudas_manuales(cliente);
 CREATE TABLE IF NOT EXISTS extraction_cache (
     hash TEXT PRIMARY KEY,
     resultado TEXT NOT NULL,
@@ -209,6 +219,7 @@ def _migrar(conn: sqlite3.Connection) -> None:
         "ALTER TABLE cobros ADD COLUMN metodo TEXT DEFAULT ''",
         "ALTER TABLE facturas ADD COLUMN ruta_archivo TEXT DEFAULT ''",
         "ALTER TABLE facturas ADD COLUMN razon_social_cliente TEXT DEFAULT ''",
+        "ALTER TABLE cobros ADD COLUMN deuda_id TEXT DEFAULT ''",
         "UPDATE ventas SET entregado='SI' WHERE entregado != '' AND entregado != 'SI' AND entregado != 'NO'",
     ):
         try:
@@ -1074,6 +1085,86 @@ def eliminar_cobro(id_cobro: str) -> bool:
     conn.commit()
     conn.close()
     return True
+
+
+def leer_deudas_manuales(cliente: str = None) -> list:
+    """Deudas cargadas a mano de meses anteriores, con cobrado/saldo/estado calculados."""
+    inicializar()
+    conn = conexion()
+    sql = "SELECT * FROM deudas_manuales"
+    params = ()
+    if cliente:
+        sql += " WHERE cliente=?"
+        params = (cliente,)
+    sql += " ORDER BY fecha, creado_en"
+    deudas = []
+    for r in conn.execute(sql, params).fetchall():
+        cobrado = _a_float(conn.execute("SELECT COALESCE(SUM(monto),0) FROM cobros WHERE deuda_id=?", (r["id"],)).fetchone()[0])
+        monto = _a_float(r["monto"])
+        saldo = round(monto - cobrado, 2)
+        estado = "COBRADO" if saldo <= 0.005 else ("PARCIAL" if cobrado > 0 else "PENDIENTE")
+        deudas.append(
+            {
+                "ID_Deuda": r["id"],
+                "Cliente": r["cliente"],
+                "Mes_Origen": r["mes_origen"],
+                "Fecha": r["fecha"],
+                "Concepto": r["concepto"],
+                "Monto": monto,
+                "Cobrado": round(cobrado, 2),
+                "Saldo": max(saldo, 0.0),
+                "Estado": estado,
+            }
+        )
+    conn.close()
+    return deudas
+
+
+def agregar_deuda_manual(cliente: str, mes_origen: str, fecha: str, monto: float, concepto: str = "") -> str:
+    inicializar()
+    id_deuda = str(uuid.uuid4())[:8]
+    conn = conexion()
+    conn.execute(
+        "INSERT INTO deudas_manuales (id, cliente, mes_origen, fecha, concepto, monto) VALUES (?,?,?,?,?,?)",
+        (
+            id_deuda,
+            str(cliente).strip(),
+            str(mes_origen or "").strip(),
+            str(fecha or "").strip() or datetime_date.today().isoformat(),
+            str(concepto or "").strip(),
+            _a_float(monto),
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return id_deuda
+
+
+def eliminar_deuda_manual(id_deuda: str) -> bool:
+    """Elimina la deuda solo si no tiene cobros registrados."""
+    inicializar()
+    conn = conexion()
+    cobros = conn.execute("SELECT COUNT(*) FROM cobros WHERE deuda_id=?", (id_deuda,)).fetchone()[0]
+    if cobros:
+        conn.close()
+        return False
+    cur = conn.execute("DELETE FROM deudas_manuales WHERE id=?", (id_deuda,))
+    conn.commit()
+    conn.close()
+    return cur.rowcount > 0
+
+
+def registrar_cobro_deuda(id_deuda: str, monto: float, fecha: str = None, nota: str = "", metodo: str = "") -> str:
+    inicializar()
+    id_cobro = str(uuid.uuid4())[:8]
+    conn = conexion()
+    conn.execute(
+        "INSERT INTO cobros (id, venta_id, deuda_id, fecha, monto, nota, metodo) VALUES (?,?,?,?,?,?,?)",
+        (id_cobro, "", id_deuda, fecha or datetime_date.today().isoformat(), _a_float(monto), str(nota).strip(), str(metodo).strip()),
+    )
+    conn.commit()
+    conn.close()
+    return id_cobro
 
 
 # ---------- PAGOS A PROVEEDORES ----------
