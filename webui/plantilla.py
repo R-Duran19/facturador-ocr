@@ -126,7 +126,16 @@ def _chrome(titulo: str, ruta: str) -> None:
         "<style>.text-h5{font-weight:700 !important;} "
         ".q-card{border-radius:12px;} .nicegui-content{max-width:1400px;}</style>"
     )
-    ui.keyboard.on_key("Alt+ArrowLeft", lambda _: nav.atras())
+    def _atajo_atras(e):
+        try:
+            if e.action.repeat or not e.action.keydown:
+                return
+            if e.key.arrow_left and e.modifiers.alt:
+                nav.atras()
+        except Exception:
+            pass
+
+    ui.keyboard(on_key=_atajo_atras, ignore=["input", "select", "textarea"])
     oscuro = ui.dark_mode()
     with ui.header().classes("items-center"):
         ui.button(icon="menu", on_click=lambda: drawer.toggle()).props("flat color=white")
