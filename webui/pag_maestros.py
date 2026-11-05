@@ -195,6 +195,7 @@ def seccion_clientes():
                 )
             with ui.row().classes("w-full gap-2"):
                 ui.button("➕ Nuevo cliente", icon="person_add", on_click=lambda: _dialogo_cliente(None, pintar)).props("unelevated")
+                ui.button("🔀 Fusionar duplicados", icon="merge_type", on_click=_dialogo_fusion).props("flat")
                 ui.button("Editar seleccionado", icon="edit", on_click=lambda: _editar_guardia_cli(seleccion, pintar)).props("flat")
                 ui.button(
                     "Eliminar seleccionado",
@@ -275,6 +276,35 @@ def seccion_clientes():
                 refrescar()
 
             e_nombre.on("keydown.enter", _guardar)
+        dialogo.open()
+
+    def _dialogo_fusion():
+        clientes = [c["Nombre_Razon_Social"] for c in db.leer_clientes() if c["Nombre_Razon_Social"]]
+        if len(clientes) < 2:
+            ui.notify("Necesitás al menos 2 clientes para fusionar.", type="info")
+            return
+        with ui.dialog() as dialogo, ui.card().classes("w-full max-w-[560px]"):
+            ui.label("Fusionar clientes duplicados").classes("text-lg font-bold")
+            ui.label(
+                "Cuando la IA leyó mal el nombre (ej: 'PYAMP GES' en vez de 'P&GES') se crea un cliente de más. "
+                "Elegí cuál conservar: se mueven sus ventas, facturas, cobros y deudas hacia el que queda, "
+                "la venta del que queda se recalcula con su % y el duplicado se borra."
+            ).classes("text-xs opacity-60")
+            sel_keep = ui.select(clientes, value=clientes[0], label="Cliente que QUIERO conservar (nombre correcto)").classes("w-full")
+            sel_dup = ui.select(clientes, value=clientes[1], label="Cliente DUPLICADO a eliminar (nombre mal leído)").classes("w-full")
+
+            def _fusionar():
+                if sel_keep.value == sel_dup.value:
+                    ui.notify("Elegí dos clientes distintos.", type="warning")
+                    return
+                db.fusionar_clientes(sel_keep.value, sel_dup.value)
+                ui.notify(f"Fusionado: '{sel_dup.value}' → '{sel_keep.value}'. Todo recalculado.", type="positive")
+                dialogo.close()
+                pintar()
+
+            with ui.row().classes("w-full justify-end gap-2 q-mt-sm"):
+                ui.button("Cancelar", on_click=dialogo.close).props("flat dense")
+                ui.button("Fusionar", icon="merge_type", on_click=_fusionar).props("unelevated dense color=primary")
         dialogo.open()
 
     def _eliminar_cli(fila, refrescar):

@@ -495,6 +495,73 @@ def existe_duplicado(nit: str, nro: str, cod: str, monto: float = None) -> bool:
     return buscar_factura_similar(nit, nro, cod, monto=monto) is not None
 
 
+def fusionar_clientes(mantener: str, eliminar: str) -> dict:
+    """Fusiona el cliente 'eliminar' (duplicado) dentro de 'mantener':
+    mueve ventas/facturas/cobros/deudas, recalcula la venta del que queda y borra el duplicado."""
+    inicializar()
+    if norm_cliente(mantener) == norm_cliente(eliminar):
+        raise ValueError("Elegí dos clientes distintos.")
+    conn = conexion()
+    keep = conn.execute("SELECT * FROM clientes WHERE nombre=?", (str(mantener).strip(),)).fetchone()
+    dup = conn.execute("SELECT * FROM clientes WHERE nombre=?", (str(eliminar).strip(),)).fetchone()
+    if not keep or not dup:
+        conn.close()
+        raise ValueError("No encontré una de las dos fichas.")
+    pct_keep = _a_float(keep["pct_venta"]) or 5.0
+    res = {"ventas_fusionadas": 0, "ventas_renombradas": 0, "facturas_renombradas": 0, "cobros_movidos": 0, "deudas_movidas": 0}
+
+    for v in conn.execute("SELECT * FROM ventas WHERE cliente=? ORDER BY creado_en", (dup["nombre"],)).fetchall():
+        destino = conn.execute(
+            "SELECT id, monto_credito FROM ventas WHERE cliente=? AND mes=? ORDER BY creado_en DESC LIMIT 1",
+            (keep["nombre"], v["mes"]),
+        ).fetchone()
+        if not destino:
+            conn.execute("UPDATE ventas SET cliente=? WHERE id=?", (keep["nombre"], v["id"]))
+            res["ventas_renombradas"] += 1
+            continue
+        ids = [r["factura_id"] for r in conn.execute("SELECT factura_id FROM venta_facturas WHERE venta_id=?", (v["id"],))]
+        nuevo_nominal = round(_a_float(destino["monto_credito"]) + _a_float(v["monto_credito"]), 2)
+        nuevo_precio = round(nuevo_nominal * pct_keep / 100.0, 2)
+        conn.execute(
+            "UPDATE ventas SET monto_credito=?, precio_cobrado=? WHERE id=?",
+            (nuevo_nominal, nuevo_precio, destino["id"]),
+        )
+        for fid in ids:
+            conn.execute(
+                "UPDATE venta_facturas SET venta_id=? WHERE venta_id=? AND factura_id=?",
+                (destino["id"], v["id"], fid),
+            )
+            conn.execute("UPDATE facturas SET venta_id=? WHERE id=?", (destino["id"], fid))
+        res["cobros_movidos"] += conn.execute(
+            "UPDATE cobros SET venta_id=? WHERE venta_id=?", (destino["id"], v["id"])
+        ).rowcount
+        conn.execute("DELETE FROM venta_facturas WHERE venta_id=?", (v["id"],))
+        conn.execute("DELETE FROM ventas WHERE id=?", (v["id"],))
+        res["ventas_fusionadas"] += 1
+        _sincronizar_estado_venta(conn, destino["id"])
+
+    cur = conn.execute(
+        "UPDATE facturas SET razon_social_cliente=? WHERE razon_social_cliente=?",
+        (keep["nombre"], dup["nombre"]),
+    )
+    res["facturas_renombradas"] = cur.rowcount
+    nit_final = keep["nit"] or dup["nit"]
+    if nit_final:
+        conn.execute(
+            "UPDATE facturas SET nit_cliente=? WHERE razon_social_cliente=? AND TRIM(COALESCE(nit_cliente,''))=''",
+            (nit_final, keep["nombre"]),
+        )
+    res["deudas_movidas"] = conn.execute(
+        "UPDATE deudas_manuales SET cliente=? WHERE cliente=?", (keep["nombre"], dup["nombre"])
+    ).rowcount
+    if nit_final and not keep["nit"]:
+        conn.execute("UPDATE clientes SET nit=? WHERE id=?", (nit_final, keep["id"]))
+    conn.execute("DELETE FROM clientes WHERE id=?", (dup["id"],))
+    conn.commit()
+    conn.close()
+    return res
+
+
 def aplicar_pct_compra(mes: str, proveedor: str, pct: float) -> int:
     """Corrige el % de compra de TODAS las facturas de un proveedor en un mes.
     Los montos a pagar/utilidad se recalculan en vivo en los reportes."""
@@ -868,6 +935,9 @@ def actualizar_venta(mes: str, venta: dict) -> bool:
 CANON_CLIENTES = [
     (("P&GES",), "P&GES SRL"),
     (("PYGES",), "P&GES SRL"),
+    (("PYAMP", "GES"), "P&GES SRL"),
+    (("P YGES",), "P&GES SRL"),
+    (("P Y GES",), "P&GES SRL"),
     (("MAPRIN",), "Maprin S.R.L."),
     (("ROCHA",), "Rocha Consultores S.R.L."),
     (("SERGIO", "APARICIO"), "Sergio Aparicio"),
@@ -940,6 +1010,15 @@ def auto_venta_de_facturas(mes: str, cliente_nombre: str, nit: str, facturas_ids
     if not nombre_cliente:
         raise ValueError("Factura sin comprador/cliente")
     info = cliente_por_nombre(nombre_cliente)
+    if not info and str(nit or "").strip():
+        conn_aux = conexion()
+        fila_nit = conn_aux.execute(
+            "SELECT nombre FROM clientes WHERE TRIM(nit)=TRIM(?) LIMIT 1", (str(nit).strip(),)
+        ).fetchone()
+        conn_aux.close()
+        if fila_nit:
+            nombre_cliente = fila_nit["nombre"]
+            info = cliente_por_nombre(nombre_cliente)
     if not info:
         agregar_cliente(nombre_cliente, nit)
         info = cliente_por_nombre(nombre_cliente)
