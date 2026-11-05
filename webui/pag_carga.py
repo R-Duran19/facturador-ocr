@@ -26,6 +26,7 @@ COLUMNAS_ARCHIVO = [
     {"name": "cliente", "label": "Cliente", "field": "cliente", "align": "left"},
     {"name": "monto_total", "label": "Monto", "field": "monto_total", "align": "right"},
     {"name": "observaciones", "label": "Observaciones", "field": "observaciones", "align": "left"},
+    {"name": "error", "label": "Detalle del error", "field": "error", "align": "left"},
 ]
 
 

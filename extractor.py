@@ -129,6 +129,18 @@ def _registrar_consumo(modelo: str, response) -> float:
         return 0.0
 
 
+def _extraer_json(texto: str) -> str:
+    """Quita cercos de código markdown y deja solo el objeto JSON de la respuesta."""
+    t = (texto or "").strip()
+    if t.startswith("```"):
+        lineas = [l for l in t.splitlines() if not l.strip().startswith("```")]
+        t = "\n".join(lineas).strip()
+    i, j = t.find("{"), t.rfind("}")
+    if i != -1 and j != -1 and j > i:
+        return t[i : j + 1]
+    return t
+
+
 def _llamar_gemini(partes: List[types.Part], modo: str) -> Tuple[str, float]:
     client = _obtener_cliente()
     esquema = campos.construir_esquema_ia()
@@ -149,7 +161,7 @@ def _llamar_gemini(partes: List[types.Part], modo: str) -> Tuple[str, float]:
                     ),
                 )
                 costo = _registrar_consumo(modelo, response)
-                texto = (response.text or "").strip()
+                texto = _extraer_json((response.text or "").strip())
                 if not texto:
                     raise ValueError("Respuesta vacía del modelo")
                 return texto, costo
