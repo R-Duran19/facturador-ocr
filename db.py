@@ -467,13 +467,19 @@ def leer_claves_existentes(mes: str = None) -> set:
 
 def buscar_factura_similar(nit: str, nro: str, cod: str):
     """Busca una factura existente por NIT + N° (el código de autorización se acepta
-    si coincide o si alguno de los dos no lo tiene — ej. importado desde Excel)."""
+    si coincide o si alguno de los dos no lo tiene — ej. importado desde Excel).
+    Si no hay NIT ni N° ni código no se considera duplicado jamás."""
+    nit_l = str(nit).strip().upper()
+    nro_l = str(nro).strip().upper()
+    cod_l = str(cod or "").strip().upper()
+    if not nit_l and not nro_l and not cod_l:
+        return None
     inicializar()
     conn = conexion()
     fila = conn.execute(
         "SELECT * FROM facturas WHERE TRIM(UPPER(nit_emisor))=? AND TRIM(UPPER(nro_factura))=? "
         "AND (TRIM(cod_autorizacion)='' OR TRIM(UPPER(cod_autorizacion))=TRIM(UPPER(?))) LIMIT 1",
-        (str(nit).strip().upper(), str(nro).strip().upper(), str(cod or "").strip().upper()),
+        (nit_l, nro_l, cod_l),
     ).fetchone()
     conn.close()
     return _fila_a_registro(fila) if fila else None

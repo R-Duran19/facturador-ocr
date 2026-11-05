@@ -377,7 +377,7 @@ document.addEventListener('click', function (ev) {
                         elif a["estado"] == "ERROR":
                             acciones.append((i, a["nombre"], "Reintentar", "blue", "replay"))
                     if acciones:
-                        with ui.row().classes("flex-wrap gap-2"):
+                        with ui.row().classes("flex-wrap gap-2 items-center"):
                             ui.label("Decide:").classes("text-sm opacity-60")
                             for i, nombre, texto, color, icono in acciones:
                                 ui.button(
@@ -388,6 +388,12 @@ document.addEventListener('click', function (ev) {
                                         pintar_lotes.refresh(),
                                     ),
                                 ).props(f"unelevated no-caps color={color} dense")
+                            if any(a["estado"] == "DUPLICADO" for a in lote["archivos"]):
+                                ui.label(
+                                    "Duplicado = ya existe una factura guardada con ese NIT emisor + N° "
+                                    "(probablemente de una subida anterior). Nada se guarda hasta que elijas: "
+                                    "'Adjuntar PDF' suma el archivo a la factura ya existente; si la descartás, no se registra."
+                                ).classes("text-xs opacity-60")
 
     def cola_accion(lote_id: str, indice: int, tipo: str) -> None:
         if tipo == "Adjuntar PDF a la existente":
