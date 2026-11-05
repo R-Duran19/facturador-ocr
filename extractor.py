@@ -224,7 +224,7 @@ def procesar_archivo(file_bytes: bytes, filename: str, usar_cache: bool = True) 
                 raise ValueError(f"La imagen '{filename}' está corrupta o no se puede leer.")
 
         partes, modo = _partes_de_archivo(file_bytes, tipo)
-        texto = _llamar_gemini(partes, modo)
+        texto, _costo_ia = _llamar_gemini(partes, modo)
         datos = campos.construir_esquema_ia().model_validate_json(texto).model_dump()
         datos.pop("nombre_archivo", None)
         datos["Nombre_Archivo"] = filename
