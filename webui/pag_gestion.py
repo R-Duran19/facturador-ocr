@@ -76,7 +76,7 @@ def pagina_gestion():
     def _pct_venta_de(factura: dict, ventas: list) -> float:
         v = _venta_de(factura, ventas)
         if v and v["Monto_Nominal"]:
-            return v["Precio_Cobrado"] / v["Monto_Nominal"] * 100.0
+            return round(v["Precio_Cobrado"] / v["Monto_Nominal"] * 100.0, 2)
         return 5.0
 
     def pintar():
@@ -196,6 +196,7 @@ def pagina_gestion():
                 return
 
             COLUMNAS_DETALLE = [
+                ("nro", "#", "center"),
                 ("fecha", "Fecha", "left"),
                 ("nit", "NIT", "left"),
                 ("factura", "Factura N", "left"),
@@ -211,7 +212,7 @@ def pagina_gestion():
             ]
             COLUMNAS_COMPACTO = [
                 ("cliente", "Cliente", "left"),
-                ("n", "Facturas", "right"),
+                ("n", "Facturas", "center"),
                 ("pct_c", "% Comp", "right"),
                 ("pct_v", "% Vta", "right"),
                 ("monto", "Monto", "right"),
@@ -305,7 +306,10 @@ def pagina_gestion():
                                     "venta": _valor_uniforme(g["venta"] for g in grupo),
                                 }
                             )
-                        filas.append(_fila_totales(COLUMNAS_COMPACTO, len(datos)))
+                        fila_tot = _fila_totales(COLUMNAS_COMPACTO, len(datos))
+                        fila_tot["pct_c"] = _fmt_pct(tot_pagar / tot_monto * 100 if tot_monto else 0)
+                        fila_tot["pct_v"] = _fmt_pct(tot_cobrar / tot_monto * 100 if tot_monto else 0)
+                        filas.append(fila_tot)
                         ui.table(
                             columns=_armar_columnas(COLUMNAS_COMPACTO),
                             rows=filas,
@@ -313,8 +317,11 @@ def pagina_gestion():
                             pagination={"rowsPerPage": 0},
                         ).classes("w-full").props("flat dense bordered")
                     else:
-                        filas = [
+                        filas = []
+                        for i, d in enumerate(datos, 1):
+                            filas.append(
                             {
+                                "nro": str(i),
                                 "ID": d["ID"],
                                 "fecha": d["fecha"],
                                 "nit": d["nit"],
@@ -329,9 +336,11 @@ def pagina_gestion():
                                 "estado": d["estado"],
                                 "venta": d["venta"],
                             }
-                            for d in datos
-                        ]
-                        filas.append(_fila_totales(COLUMNAS_DETALLE, len(datos)))
+                            )
+                        fila_tot = _fila_totales(COLUMNAS_DETALLE, len(datos))
+                        fila_tot["pct_c"] = _fmt_pct(tot_pagar / tot_monto * 100 if tot_monto else 0)
+                        fila_tot["pct_v"] = _fmt_pct(tot_cobrar / tot_monto * 100 if tot_monto else 0)
+                        filas.append(fila_tot)
                         ui.table(
                             columns=_armar_columnas(COLUMNAS_DETALLE),
                             rows=filas,

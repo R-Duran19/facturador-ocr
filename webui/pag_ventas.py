@@ -37,7 +37,7 @@ def _tabla_modo(cont, datos, cols_compacto, cols_detalle):
     def _fmt(x):
         return f"{x:,.2f}"
 
-    def _total(cols, n):
+    def _total(cols, n, pct_global=None):
         fila = {clave: "" for clave, _, _ in cols}
         fila[cols[0][0]] = "TOTALES"
         if any(c[0] == "n" for c in cols):
@@ -45,6 +45,8 @@ def _tabla_modo(cont, datos, cols_compacto, cols_detalle):
         for clave in _CLAVES_SUMA:
             if any(c[0] == clave for c in cols):
                 fila[clave] = _fmt(sum(d.get(clave, 0) or 0 for d in datos))
+        if pct_global is not None and any(c[0] == "pct" for c in cols):
+            fila["pct"] = f"{round(pct_global, 2):g}%"
         return fila
 
     modo = {"valor": "Compacto"}
@@ -52,6 +54,9 @@ def _tabla_modo(cont, datos, cols_compacto, cols_detalle):
     def _pintar():
         cont.clear()
         with cont:
+            numerador_global = "apagar" if datos and "apagar" in datos[0] else "acobrar"
+            den_global = sum(x.get("monto", 0) or 0 for x in datos)
+            pct_global = round(sum(x.get(numerador_global, 0) or 0 for x in datos) / den_global * 100, 2) if den_global else None
             if modo["valor"] == "Compacto":
                 grupos = {}
                 for d in datos:
@@ -64,12 +69,11 @@ def _tabla_modo(cont, datos, cols_compacto, cols_detalle):
                     for clave in _CLAVES_SUMA:
                         if any(c[0] == clave for c in cols_compacto):
                             fila[clave] = _fmt(sum(x.get(clave, 0) or 0 for x in grupo))
-                    numerador = "apagar" if grupo and "apagar" in grupo[0] else "acobrar"
                     total_monto = sum(x.get("monto", 0) or 0 for x in grupo)
-                    pct = round(sum(x.get(numerador, 0) or 0 for x in grupo) / total_monto * 100, 4) if total_monto else 0
+                    pct = round(sum(x.get(numerador_global, 0) or 0 for x in grupo) / total_monto * 100, 2) if total_monto else 0
                     fila["pct"] = f"{pct:g}%"
                     filas.append(fila)
-                filas.append(_total(cols_compacto, len(datos)))
+                filas.append(_total(cols_compacto, len(datos), pct_global=pct_global))
                 columnas, row_key = cols_compacto, clave_grupo
             else:
                 filas = []
@@ -84,7 +88,7 @@ def _tabla_modo(cont, datos, cols_compacto, cols_detalle):
                         else:
                             fila[clave] = valor
                     filas.append(fila)
-                filas.append(_total(cols_detalle, len(datos)))
+                filas.append(_total(cols_detalle, len(datos), pct_global=pct_global))
                 columnas, row_key = cols_detalle, "factura"
             ui.table(
                 columns=[
@@ -231,7 +235,7 @@ def pagina_ventas():
     def _pct_venta_de(factura: dict, ventas: list) -> float:
         v = _venta_de(factura, ventas)
         if v and v["Monto_Nominal"]:
-            return v["Precio_Cobrado"] / v["Monto_Nominal"] * 100.0
+            return round(v["Precio_Cobrado"] / v["Monto_Nominal"] * 100.0, 2)
         return 5.0
 
     # ---------- render ----------
