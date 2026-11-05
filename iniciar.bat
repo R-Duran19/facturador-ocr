@@ -3,6 +3,7 @@ cd /d "%~dp0"
 title Facturador OCR
 
 if "%1"=="SOLO_ACTUALIZAR" goto solo_actualizar
+if "%1"=="SERVIDOR" goto servidor
 
 if not exist "venv\Scripts\python.exe" (
     echo.
@@ -12,25 +13,29 @@ if not exist "venv\Scripts\python.exe" (
     exit /b
 )
 
-if "%YA_ACTUALIZADO%"=="1" goto servidor
-
 where git >nul 2>&1
-if errorlevel 1 goto servidor
-if not exist ".git" goto servidor
+if errorlevel 1 goto sin_git
+if not exist ".git" goto sin_git
 
 echo  Buscando actualizaciones...
-REM La actualizacion corre desde una COPIA en TEMP (git nunca la reemplaza),
-REM asi este archivo puede ser reescrito sin matar la ejecucion.
+REM La actualizacion corre desde una COPIA en TEMP (git nunca reemplaza el script
+REM en ejecucion). Se espera a que termine y recien entonces abre el sistema,
+REM asi siempre corre la version nueva.
 copy /y "%~f0" "%TEMP%\fact_actualizar.bat" >nul
-set "YA_ACTUALIZADO=1"
-start "" "%~f0"
-start "" /min cmd /c ""%TEMP%\fact_actualizar.bat" SOLO_ACTUALIZAR"
+start "" /wait /min cmd /c ""%TEMP%\fact_actualizar.bat" SOLO_ACTUALIZAR"
+start "" cmd /c ""%TEMP%\fact_actualizar.bat" SERVIDOR"
+exit /b
+
+:sin_git
+echo  [i] Sin actualizador git: se inicia la version instalada.
+copy /y "%~f0" "%TEMP%\fact_actualizar.bat" >nul
+start "" cmd /c ""%TEMP%\fact_actualizar.bat" SERVIDOR"
 exit /b
 
 :solo_actualizar
 git pull --ff-only
 if errorlevel 1 (
-    echo  [i] No se pudo actualizar: sin internet o cambios locales.
+    echo  [i] No se pudo actualizar: sin internet o cambios locales. Se inicia con la version actual.
     ping -n 4 127.0.0.1 >nul
 ) else (
     echo  Sistema actualizado con la ultima version.
