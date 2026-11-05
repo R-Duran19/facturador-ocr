@@ -33,7 +33,7 @@ echo.
 echo  [1/5] No se encontro Python 3.12. Instalandolo automaticamente...
 where winget >nul 2>&1
 if not errorlevel 1 (
-    echo   Instalando con winget (tarda unos minutos, NO cierres esta ventana)...
+    echo   Instalando con winget - tarda unos minutos, NO cierres esta ventana...
     winget install -e --id Python.Python.3.12 --accept-package-agreements --accept-source-agreements --silent
 ) else (
     echo   Descargando instalador oficial de python.org...
@@ -43,7 +43,7 @@ if not errorlevel 1 (
         pause
         exit /b 1
     )
-    echo   Instalando silenciosamente (tarda unos minutos, NO cierres esta ventana)...
+    echo   Instalando silenciosamente - tarda unos minutos, NO cierres esta ventana...
     "%TEMP%\python-installer.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_test=0 Include_launcher=1
 )
 
@@ -104,7 +104,7 @@ if not exist ".env" (
     echo  ============================================================
     echo   IMPORTANTE: abre el archivo .env y configura:
     echo     GEMINI_API_KEY=tu_clave_de https://aistudio.google.com/apikey
-    echo   (Sin esa clave la lectura automatica de facturas no funciona)
+    echo   Sin esa clave la lectura automatica de facturas no funciona
     echo  ============================================================
 ) else (
     echo  [4/5] .env ya existe: se conserva tu configuracion.
