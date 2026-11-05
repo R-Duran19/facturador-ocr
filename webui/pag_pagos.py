@@ -133,7 +133,7 @@ def pagina_pagos():
                             for f in facturas
                         ],
                         row_key="Nro_Factura",
-                        pagination=10,
+                        pagination=0,
                     ).props("flat dense bordered")
 
             ui.label("Pagos registrados").classes("font-semibold text-sm q-mt-sm")
@@ -163,7 +163,7 @@ def pagina_pagos():
                             ],
                             row_key="ID_Pago",
                             selection="single",
-                            pagination=6,
+                            pagination=0,
                             on_select=lambda e: sel_pago.update({"id": e.selection[0]["ID_Pago"] if e.selection else None}),
                         ).props("flat dense bordered")
                         ui.button(

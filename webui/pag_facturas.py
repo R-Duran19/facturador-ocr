@@ -215,7 +215,7 @@ def pagina_facturas():
                     rows=filas,
                     row_key="ID",
                     selection="single",
-                    pagination={"rowsPerPage": 25},
+                    pagination={"rowsPerPage": 0},
                     on_select=lambda e: seleccion.update(
                         {"registro": e.selection[0] if e.selection else None}
                     ),

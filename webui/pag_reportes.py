@@ -147,7 +147,7 @@ def pagina_reportes():
                         "utilidad": f"{sum(f['Utilidad'] for f in costos):,.2f}",
                     }
                 )
-                ui.table(columns=COLUMNAS_COSTOS, rows=filas, row_key="Cliente", pagination=30).classes(
+                ui.table(columns=COLUMNAS_COSTOS, rows=filas, row_key="Cliente", pagination=0).classes(
                     "w-full"
                 ).props("flat dense bordered")
             else:
@@ -184,7 +184,7 @@ def pagina_reportes():
                         "saldo": f"{sum(f['Saldo'] for f in filas_v):,.2f}",
                     }
                 )
-                ui.table(columns=COLUMNAS_VENTAS, rows=filas, row_key="Nro", pagination=30).classes(
+                ui.table(columns=COLUMNAS_VENTAS, rows=filas, row_key="Nro", pagination=0).classes(
                     "w-full"
                 ).props("flat dense bordered")
             else:

@@ -52,7 +52,7 @@ def seccion_sistema():
                     for m in gasto["por_mes"]
                 ],
                 row_key="mes",
-                pagination=6,
+                pagination=0,
             ).props("flat dense bordered")
         else:
             ui.label("Aún no hay llamadas registradas.").classes("text-sm opacity-50")
@@ -163,7 +163,7 @@ def seccion_sistema():
                         ],
                         rows=[{**b, "kb": f"{b['tamano_kb']:,.1f}"} for b in backups],
                         row_key="archivo",
-                        pagination=8,
+                        pagination=0,
                     ).props("flat dense")
                 else:
                     ui.label("Sin respaldos aún.").classes("opacity-50 text-sm")

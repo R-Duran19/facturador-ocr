@@ -402,7 +402,7 @@ def pagina_ventas():
                 rows=filas,
                 row_key="ID_Venta",
                 selection="single",
-                pagination={"rowsPerPage": 15},
+                pagination={"rowsPerPage": 0},
                 on_select=lambda e: (
                     estado.update(
                         {
@@ -460,7 +460,7 @@ def pagina_ventas():
                 rows=filas,
                 row_key="ID_Deuda",
                 selection="single",
-                pagination={"rowsPerPage": 15},
+                pagination={"rowsPerPage": 0},
                 on_select=lambda e: sel.update({"id": e.selection[0]["ID_Deuda"] if e.selection else None}),
             ).classes("w-full").props("flat dense bordered")
             with ui.row().classes("w-full flex-wrap gap-x-8 gap-y-1 q-px-sm text-sm"):
@@ -828,7 +828,7 @@ def pagina_ventas():
                         ],
                         row_key="ID_Cobro",
                         selection="single",
-                        pagination=8,
+                        pagination=0,
                         on_select=lambda e: sel_cobro.update(
                             {"id": e.selection[0]["ID_Cobro"] if e.selection else None}
                         ),
@@ -992,7 +992,7 @@ def pagina_ventas():
                         ],
                         row_key="ID_Pago",
                         selection="single",
-                        pagination=8,
+                        pagination=0,
                         on_select=lambda e: sel_pago.update(
                             {"id": e.selection[0]["ID_Pago"] if e.selection else None}
                         ),
@@ -1120,7 +1120,7 @@ def pagina_ventas():
                         ],
                         row_key="ID",
                         selection="multiple",
-                        pagination=12,
+                        pagination=0,
                         on_select=lambda e: _seleccion(e.selection or []),
                     ).classes("w-full").props("flat dense bordered")
 

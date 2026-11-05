@@ -375,7 +375,7 @@ document.addEventListener('click', function (ev) {
                         columns=COLUMNAS_ARCHIVO,
                         rows=[{**a, "monto_total": f"{(a['monto_total'] or 0):,.2f}"} for a in lote["archivos"]],
                         row_key="nombre",
-                        pagination=10,
+                        pagination=0,
                     ).classes("w-full").props("flat dense")
                     acciones = []
                     for i, a in enumerate(lote["archivos"]):

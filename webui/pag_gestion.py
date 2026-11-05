@@ -429,7 +429,7 @@ def pagina_gestion():
                 ],
                 row_key="ID_Pago",
                 selection="single",
-                pagination=5,
+                pagination=0,
                 on_select=lambda e: sel_pago.update({"id": e.selection[0]["ID_Pago"] if e.selection else None}),
             ).props("flat dense bordered")
         else:
@@ -523,7 +523,7 @@ def pagina_gestion():
                         for f in facturas
                     ],
                     row_key="factura",
-                    pagination=12,
+                    pagination=0,
                 ).classes("w-full").props("flat dense bordered")
 
             with ui.row().classes("w-full gap-2 q-mt-sm"):
@@ -561,7 +561,7 @@ def pagina_gestion():
                         ],
                         row_key="ID_Cobro",
                         selection="single",
-                        pagination=8,
+                        pagination=0,
                         on_select=lambda e: sel_cobro.update({"id": e.selection[0]["ID_Cobro"] if e.selection else None}),
                     ).props("flat dense bordered")
                     ui.button("Eliminar cobro seleccionado", icon="delete", on_click=lambda: _eliminar_cobro(ventas)).props(
@@ -673,7 +673,7 @@ def pagina_gestion():
                     }
                 ],
                 row_key="Cliente",
-                pagination=20,
+                pagination=0,
             ).classes("w-full").props("flat dense bordered")
         else:
             ui.label("Sin datos para el reporte de costos.").classes("opacity-50")
@@ -723,7 +723,7 @@ def pagina_gestion():
                     }
                 ],
                 row_key="Cliente",
-                pagination=20,
+                pagination=0,
             ).classes("w-full").props("flat dense bordered")
 
     pintar()
