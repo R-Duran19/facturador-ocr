@@ -37,9 +37,9 @@ def _legible(nombre_mes: str) -> str:
 def pagina_gestion():
     hoy = date.today()
     mes_hoy = f"{hoy.year}_{hoy.month:02d}_{MESES_ES[hoy.month - 1]}"
-    meses = sorted(set(db.listar_meses()) | {mes_hoy}, reverse=True)
+    meses = sorted(set(db.listar_meses()), reverse=True)
 
-    estado = {"mes": mes_hoy if mes_hoy in meses else (meses[0] if meses else mes_hoy), "vista": "mes", "proveedor": None, "cliente": None}
+    estado = {"mes": meses[0] if meses else mes_hoy, "vista": "mes", "proveedor": None, "cliente": None}
 
     sel_mes = ui.select(
         meses,

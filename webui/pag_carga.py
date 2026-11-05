@@ -94,7 +94,7 @@ document.addEventListener('click', function (ev) {
 """
     )
 
-    meses = sorted(set(db.listar_meses()) | {_mes_actual()}, reverse=True)
+    meses = sorted(set(db.listar_meses()), reverse=True)
     mes_hoy = _mes_actual()
     opciones_mes = list(meses)
     proveedores = [p for p in db.leer_proveedores() if p != "Sin Asignar"]
@@ -114,8 +114,8 @@ document.addEventListener('click', function (ev) {
     with ui.row().classes("w-full flex-wrap items-end gap-3"):
         sel_mes = ui.select(
             opciones_mes,
-            value=mes_hoy if mes_hoy in opciones_mes else (opciones_mes[0] if opciones_mes else mes_hoy),
-            label="Mes de trabajo (escribí uno nuevo si no existe: 2026_11_Noviembre)",
+            value=opciones_mes[0] if opciones_mes else mes_hoy,
+            label="Mes de trabajo (crear uno nuevo con ＋ Nuevo mes)",
             new_value_mode="add",
             on_change=lambda e: pintar_strip.refresh(),
         ).classes("w-full max-w-md")
@@ -397,7 +397,11 @@ document.addEventListener('click', function (ev) {
 
     def cola_accion(lote_id: str, indice: int, tipo: str) -> None:
         if tipo == "Adjuntar PDF a la existente":
-            COLA.guardar_duplicado(lote_id, indice)
+            ok = COLA.guardar_duplicado(lote_id, indice)
+            ui.notify(
+                "PDF adjuntado a la factura existente ✔" if ok else "No se pudo adjuntar (el registro ya no está disponible).",
+                type="positive" if ok else "warning",
+            )
         elif tipo == "Reintentar":
             COLA.reintentar_archivo(lote_id, indice)
         else:
