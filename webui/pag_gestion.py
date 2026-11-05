@@ -362,6 +362,26 @@ def pagina_gestion():
                 ui.label(f"A cobrar: Bs {tot_cobrar:,.2f}").classes("text-primary font-semibold")
                 ui.label(f"Utilidad: Bs {tot_util:,.2f}").classes("font-bold")
 
+            with ui.row().classes("w-full items-end gap-2 q-mt-sm"):
+                pct_nuevo = ui.number("Corregir % compra de TODAS sus facturas del mes", value=0.0, format="%.2f").classes("w-80")
+
+                def _aplicar_pct():
+                    if not pct_nuevo.value or pct_nuevo.value <= 0:
+                        ui.notify("Poné el % correcto primero.", type="warning")
+                        return
+                    n = db.aplicar_pct_compra(_mes(), proveedor, pct_nuevo.value)
+                    ui.notify(f"% compra de {proveedor} actualizado a {pct_nuevo.value:g}% en {n} factura(s). Todo recalculado.", type="positive")
+                    pintar()
+
+                ui.button(
+                    "Aplicar y recalcular",
+                    icon="percent",
+                    on_click=_aplicar_pct,
+                ).props("unelevated dense no-caps color=primary").tooltip(
+                    "Corrige el % de compra de todas las facturas de este proveedor en el mes. "
+                    "Lo que se le paga y la utilidad se recalculan en todos los reportes al instante."
+                )
+
         pg = next((d for d in db.resumen_pagos_proveedores(_mes()) if d["Proveedor"] == proveedor), None)
         with ui.card().classes("w-full"):
             with ui.row().classes("items-center gap-2 w-full"):

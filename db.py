@@ -465,10 +465,11 @@ def leer_claves_existentes(mes: str = None) -> set:
     }
 
 
-def buscar_factura_similar(nit: str, nro: str, cod: str):
+def buscar_factura_similar(nit: str, nro: str, cod: str, monto: float = None):
     """Busca una factura existente por NIT + N° (el código de autorización se acepta
     si coincide o si alguno de los dos no lo tiene — ej. importado desde Excel).
-    Si no hay NIT ni N° ni código no se considera duplicado jamás."""
+    Si no hay NIT ni N° ni código no se considera duplicado jamás.
+    Si el monto conocido difiere del guardado, NO es duplicado: son facturas distintas."""
     nit_l = str(nit).strip().upper()
     nro_l = str(nro).strip().upper()
     cod_l = str(cod or "").strip().upper()
@@ -481,12 +482,31 @@ def buscar_factura_similar(nit: str, nro: str, cod: str):
         "AND (TRIM(cod_autorizacion)='' OR TRIM(UPPER(cod_autorizacion))=TRIM(UPPER(?))) LIMIT 1",
         (nit_l, nro_l, cod_l),
     ).fetchone()
+    if fila and monto is not None:
+        monto_db = _a_float(fila["monto_total"])
+        if monto_db > 0 and abs(monto_db - _a_float(monto)) > 0.02:
+            conn.close()
+            return None
     conn.close()
     return _fila_a_registro(fila) if fila else None
 
 
-def existe_duplicado(nit: str, nro: str, cod: str) -> bool:
-    return buscar_factura_similar(nit, nro, cod) is not None
+def existe_duplicado(nit: str, nro: str, cod: str, monto: float = None) -> bool:
+    return buscar_factura_similar(nit, nro, cod, monto=monto) is not None
+
+
+def aplicar_pct_compra(mes: str, proveedor: str, pct: float) -> int:
+    """Corrige el % de compra de TODAS las facturas de un proveedor en un mes.
+    Los montos a pagar/utilidad se recalculan en vivo en los reportes."""
+    inicializar()
+    conn = conexion()
+    cur = conn.execute(
+        "UPDATE facturas SET pct_compra=? WHERE mes=? AND proveedor=?",
+        (_a_float(pct), str(mes), str(proveedor)),
+    )
+    conn.commit()
+    conn.close()
+    return cur.rowcount
 
 
 def listar_meses() -> list:

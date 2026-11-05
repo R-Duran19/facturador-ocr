@@ -227,6 +227,12 @@ document.addEventListener('click', function (ev) {
         if not proveedor:
             ui.notify("Elegí el proveedor.", type="warning")
             return
+        if proveedor not in fichas:
+            ui.notify(
+                f"⚠ '{proveedor}' no tiene ficha en Configuración → Proveedores: revisá el % compra antes de procesar.",
+                type="warning",
+                timeout=6,
+            )
         gasto = db.leer_gasto_ia()
         llamadas = sum(m["llamadas"] for m in gasto["por_mes"])
         promedio = (gasto["total"] / llamadas) if llamadas else 0.0007
@@ -269,13 +275,14 @@ document.addEventListener('click', function (ev) {
                 on_change=lambda e: pct_input.set_value(_pct_de(e.value)),
             ).classes("w-56")
             pct_input = ui.number(
-                "% compra (de su ficha)",
+                "% compra (de su ficha, editable)",
                 value=_pct_de(opciones_prov[0]) if opciones_prov else 3.5,
                 format="%.2f",
                 min=0.0,
                 max=100.0,
-            ).props("disable").tooltip(
-                "Se define en Configuración → Proveedores. Correcciones por factura: página Facturas."
+            ).tooltip(
+                "Sale de la ficha del proveedor. Podés ajustarlo aquí antes de procesar. "
+                "Correcciones después de subir: Gestión del mes → proveedor → Aplicar y recalcular."
             ).classes("w-48")
             ui.space()
             ui.button(
