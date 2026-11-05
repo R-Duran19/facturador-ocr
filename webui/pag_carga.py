@@ -343,7 +343,7 @@ document.addEventListener('click', function (ev) {
                     with ui.row().classes("w-full items-center gap-3"):
                         ui.icon("folder_zip")
                         ui.label(
-                            f"Lote {lote['id']} · {lote['proveedor']} al {lote['pct_compra']:g}% · {lote['mes']}"
+                            f"Lote {lote['id']} · {lote['proveedor']} al {(lote['pct_compra'] or 0):g}% · {lote['mes']}"
                         ).classes("font-semibold")
                         ui.space()
                         ui.label(f"{lote['hechos']}/{lote['total']}").classes("opacity-70")
@@ -354,7 +354,7 @@ document.addEventListener('click', function (ev) {
                             ).props("flat dense round").tooltip("Limpiar lotes terminados")
                     ui.linear_progress(value=lote["progreso"], show_value=False).classes("w-full")
                     chips_estado(lote["ok"], lote["duplicados"], lote["errores"])
-                    suma_ok = sum(a["monto_total"] for a in lote["archivos"] if a["estado"] == "OK")
+                    suma_ok = sum((a["monto_total"] or 0) for a in lote["archivos"] if a["estado"] == "OK")
                     if suma_ok:
                         ui.label(f"Σ montos guardados: Bs {suma_ok:,.2f}").classes("text-xs opacity-60")
                     for v in lote.get("ventas", []):
@@ -365,7 +365,7 @@ document.addEventListener('click', function (ev) {
                             ).classes("text-xs text-green-700 dark:text-green-400")
                     ui.table(
                         columns=COLUMNAS_ARCHIVO,
-                        rows=[{**a, "monto_total": f"{a['monto_total']:,.2f}"} for a in lote["archivos"]],
+                        rows=[{**a, "monto_total": f"{(a['monto_total'] or 0):,.2f}"} for a in lote["archivos"]],
                         row_key="nombre",
                         pagination=10,
                     ).classes("w-full").props("flat dense")

@@ -12,6 +12,14 @@ from extractor import _detectar_tipo, procesar_archivo
 
 __all__ = ["COLA", "LoteOCR", "TrabajoArchivo", "ColaOCR"]
 
+
+def _num(valor, default=0.0) -> float:
+    try:
+        return float(str(valor).replace(",", ""))
+    except (TypeError, ValueError):
+        return default
+
+
 ESTADOS_ARCHIVO = ("EN_COLA", "PROCESANDO", "OK", "DUPLICADO", "ERROR")
 ESTADOS_ACTIVOS = ("EN_COLA", "PROCESANDO")
 
@@ -30,12 +38,12 @@ class TrabajoArchivo:
             "nombre": self.nombre,
             "estado": self.estado,
             "error": self.error,
-            "nro_factura": r.get("Nro_Factura", ""),
-            "razon_social": r.get("Razon_Social", ""),
-            "cliente": r.get("Razon_Social_Cliente", ""),
-            "monto_total": r.get("Monto_Total", 0.0),
-            "credito_fiscal": r.get("Credito_Fiscal", 0.0),
-            "observaciones": r.get("Observaciones", ""),
+            "nro_factura": r.get("Nro_Factura", "") or "",
+            "razon_social": r.get("Razon_Social", "") or "",
+            "cliente": r.get("Razon_Social_Cliente", "") or "",
+            "monto_total": _num(r.get("Monto_Total")),
+            "credito_fiscal": _num(r.get("Credito_Fiscal")),
+            "observaciones": r.get("Observaciones", "") or "",
             "cache": bool(r.get("_cache")),
         }
 
