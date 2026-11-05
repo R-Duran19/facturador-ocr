@@ -124,56 +124,137 @@ def pagina_gestion():
         ventas = _ventas()
         pagos = {d["Proveedor"]: d for d in db.resumen_pagos_proveedores(_mes())}
 
-        if not facturas:
+        if not facturas and not ventas:
             ui.label("Este mes no tiene facturas todavía. Cargalas desde la portada.").classes("opacity-50")
-        else:
-            ui.label("📁 Proveedores (quién trajo las facturas)").classes("font-semibold text-lg")
-            with ui.row().classes("w-full flex-wrap gap-3"):
-                por_prov = {}
-                for f in facturas:
-                    p = por_prov.setdefault(f["Proveedor_Asignado"] or "Sin Asignar", {"facturas": [], "nominal": 0.0})
-                    p["facturas"].append(f)
-                    p["nominal"] += f["Monto_Total"]
-                for proveedor in sorted(por_prov):
-                    d = por_prov[proveedor]
-                    pg = pagos.get(proveedor, {"A_Pagar": 0.0, "Pagado": 0.0, "Saldo": 0.0, "Estado": "PENDIENTE"})
-                    with ui.card().classes("cursor-pointer min-w-[230px] flex-1 border-2").style(
-                        "border-color: var(--q-primary);"
-                    ).on("click", lambda p=proveedor: _ir("proveedor", p)):
-                        with ui.row().classes("items-center gap-2 w-full"):
-                            ui.icon("folder", color="primary").classes("text-3xl")
-                            ui.label(proveedor).classes("font-bold text-md")
-                            ui.space()
-                            ui.badge(pg["Estado"], color=ESTADO_COLOR.get(pg["Estado"], "grey")).props("text-color=white")
-                        ui.label(f"{len(d['facturas'])} facturas · Bs {d['nominal']:,.0f} facturado").classes("text-xs opacity-60")
-                        ui.label(f"A pagarle: Bs {pg['A_Pagar']:,.2f}").classes("text-xs")
-                        ui.label(f"Pagado: Bs {pg['Pagado']:,.2f} · Saldo: Bs {pg['Saldo']:,.2f}").classes(
-                            "text-xs opacity-70"
-                        )
 
-        ui.separator()
-        ui.label("📁 Ventas completas (por cliente — para gestionar cobros)").classes("font-semibold text-lg")
-        con_saldo = sorted({v["Cliente_Razon_Social"] for v in ventas}, key=str.lower)
-        if not con_saldo:
-            ui.label("Sin ventas este mes.").classes("opacity-50")
-        else:
-            with ui.row().classes("w-full flex-wrap gap-3"):
-                for cliente in con_saldo:
-                    sus = [v for v in ventas if v["Cliente_Razon_Social"] == cliente]
-                    nominal = sum(v["Monto_Nominal"] for v in sus)
-                    cobrar = sum(v["Precio_Cobrado"] for v in sus)
-                    saldo = sum(v["Saldo"] for v in sus)
-                    est = next((v["Estado_Cobro"] for v in sus if v["Saldo"] > 0.005), "COBRADO")
-                    with ui.card().classes("cursor-pointer min-w-[230px] flex-1 border-2").style(
-                        "border-color: var(--q-primary);"
-                    ).on("click", lambda c=cliente: _ir_cliente(c)):
-                        with ui.row().classes("items-center gap-2 w-full"):
-                            ui.icon("business", color="primary").classes("text-3xl")
-                            ui.label(cliente).classes("font-bold text-md")
-                            ui.space()
-                            ui.badge(est, color=ESTADO_COLOR.get(est, "grey")).props("text-color=white")
-                        ui.label(f"{len(sus)} venta(s) · Bs {nominal:,.0f} facturado").classes("text-xs opacity-60")
-                        ui.label(f"A cobrar: Bs {cobrar:,.2f} · Saldo: Bs {saldo:,.2f}").classes("text-xs opacity-70")
+        def _tabla_clicable(cont, columnas, filas, clave, totales, al_entrar):
+            cont.clear()
+            with cont:
+                tabla = ui.table(
+                    columns=[
+                        {"name": c[0], "label": c[1], "field": c[0], "align": c[2]} for c in columnas
+                    ],
+                    rows=filas + [totales],
+                    row_key=clave,
+                    pagination={"rowsPerPage": 0},
+                ).classes("w-full").props("flat dense bordered")
+                tabla.add_slot(
+                    "body-row",
+                    "<q-tr :props='props' class='cursor-pointer' @click=\"$parent.$emit('abrir', props.row)\">"
+                    "<q-td v-for='col in props.cols' :key='col.name' :props='props'>{{ col.value }}</q-td></q-tr>",
+                )
+                tabla.on("abrir", lambda e: al_entrar(e.args.get(clave) if isinstance(e.args, dict) else None))
+
+        filas_prov = []
+        tot_fac = tot_monto_p = tot_pagar = tot_pagado = tot_saldo_p = 0
+        por_prov = {}
+        for f in facturas:
+            d = por_prov.setdefault(f["Proveedor_Asignado"] or "Sin Asignar", {"n": 0, "nominal": 0.0})
+            d["n"] += 1
+            d["nominal"] += f["Monto_Total"]
+        for proveedor in sorted(por_prov):
+            d = por_prov[proveedor]
+            pg = pagos.get(proveedor, {"A_Pagar": 0.0, "Pagado": 0.0, "Saldo": 0.0, "Estado": "PENDIENTE"})
+            tot_fac += d["n"]
+            tot_monto_p += d["nominal"]
+            tot_pagar += pg["A_Pagar"]
+            tot_pagado += pg["Pagado"]
+            tot_saldo_p += pg["Saldo"]
+            filas_prov.append(
+                {
+                    "proveedor": proveedor,
+                    "facturas": str(d["n"]),
+                    "monto": f"{d['nominal']:,.2f}",
+                    "apagar": f"{pg['A_Pagar']:,.2f}",
+                    "pagado": f"{pg['Pagado']:,.2f}",
+                    "saldo": f"{pg['Saldo']:,.2f}",
+                    "estado": pg["Estado"],
+                }
+            )
+        totales_prov = {
+            "proveedor": "TOTALES",
+            "facturas": str(tot_fac),
+            "monto": f"{tot_monto_p:,.2f}",
+            "apagar": f"{tot_pagar:,.2f}",
+            "pagado": f"{tot_pagado:,.2f}",
+            "saldo": f"{tot_saldo_p:,.2f}",
+            "estado": "",
+        }
+
+        filas_cli = []
+        tot_ventas = tot_cobrar = tot_cobrado = tot_saldo_c = 0
+        for cliente in sorted({v["Cliente_Razon_Social"] for v in ventas}, key=str.lower):
+            sus = [v for v in ventas if v["Cliente_Razon_Social"] == cliente]
+            nominal = sum(v["Monto_Nominal"] for v in sus)
+            cobrar = sum(v["Precio_Cobrado"] for v in sus)
+            cobrado = sum(v["Total_Cobrado"] for v in sus)
+            saldo = sum(v["Saldo"] for v in sus)
+            est = next((v["Estado_Cobro"] for v in sus if v["Saldo"] > 0.005), "COBRADO")
+            tot_ventas += len(sus)
+            tot_cobrar += cobrar
+            tot_cobrado += cobrado
+            tot_saldo_c += saldo
+            filas_cli.append(
+                {
+                    "empresa": cliente,
+                    "ventas": str(len(sus)),
+                    "cobrar": f"{cobrar:,.2f}",
+                    "cobrado": f"{cobrado:,.2f}",
+                    "saldo": f"{saldo:,.2f}",
+                    "estado": est,
+                }
+            )
+        totales_cli = {
+            "empresa": "TOTALES",
+            "ventas": str(tot_ventas),
+            "cobrar": f"{tot_cobrar:,.2f}",
+            "cobrado": f"{tot_cobrado:,.2f}",
+            "saldo": f"{tot_saldo_c:,.2f}",
+            "estado": "",
+        }
+
+        cont_prov = ui.column().classes("w-full")
+        cont_cli = ui.column().classes("w-full")
+
+        with ui.grid(columns=2).classes("w-full gap-4 items-start"):
+            with ui.column().classes("w-full gap-1"):
+                ui.label("📁 Proveedores (quién trajo las facturas)").classes("font-semibold text-lg")
+                _tabla_clicable(
+                    cont_prov,
+                    [
+                        ("proveedor", "Proveedor", "left"),
+                        ("facturas", "Fact.", "center"),
+                        ("monto", "Monto", "right"),
+                        ("apagar", "A pagar", "right"),
+                        ("pagado", "Pagado", "right"),
+                        ("saldo", "Saldo", "right"),
+                        ("estado", "Estado", "center"),
+                    ],
+                    filas_prov,
+                    "proveedor",
+                    totales_prov,
+                    lambda nombre: nombre and _ir("proveedor", nombre),
+                )
+                ui.label("Tocá una fila para ver el detalle completo del proveedor.").classes("text-xs opacity-50")
+
+            with ui.column().classes("w-full gap-1"):
+                ui.label("🏢 Empresas (clientes — cobros)").classes("font-semibold text-lg")
+                _tabla_clicable(
+                    cont_cli,
+                    [
+                        ("empresa", "Empresa", "left"),
+                        ("ventas", "Ventas", "center"),
+                        ("cobrar", "A cobrar", "right"),
+                        ("cobrado", "Cobrado", "right"),
+                        ("saldo", "Saldo", "right"),
+                        ("estado", "Estado", "center"),
+                    ],
+                    filas_cli,
+                    "empresa",
+                    totales_cli,
+                    lambda nombre: nombre and _ir_cliente(nombre),
+                )
+                ui.label("Tocá una fila para gestionar los cobros de esa empresa.").classes("text-xs opacity-50")
 
         ui.separator()
         _seccion_reportes()
