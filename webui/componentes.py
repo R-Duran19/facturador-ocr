@@ -63,12 +63,14 @@ def selector_porcentaje(label: str, valor: float = 5.0, presets: tuple = (3.5, 3
 
 
 def input_fecha(label: str, valor: str = None) -> ui.input:
-    """Campo de fecha de solo lectura con calendario desplegable: cero tipeo."""
+    """Campo de fecha de solo lectura; el calendario se abre SOLO desde el icono
+    (el menu queda anclado al icono, no al input, para no abrirse al hacer click en el campo)."""
     inp = ui.input(label, value=valor or date.today().isoformat()).props("readonly")
     with inp.add_slot("append"):
         icono = ui.icon("event").classes("cursor-pointer opacity-70")
-    with ui.menu().props("auto-close") as menu:
-        ui.date(value=inp.value, on_change=lambda e: inp.set_value(e.value))
+        with icono:
+            with ui.menu().props("auto-close") as menu:
+                ui.date(value=inp.value, on_change=lambda e: inp.set_value(e.value))
     icono.on("click", menu.open)
     return inp
 

@@ -762,25 +762,30 @@ def pagina_ventas():
             if not ventas_con_saldo:
                 ui.label("Todas las ventas de esta empresa están cobradas. ✔").classes("text-sm opacity-60")
             else:
-                with ui.row().classes("w-full flex-wrap items-end gap-2"):
-                    f_c = input_fecha("Fecha")
-                    m_c = ui.number("Monto que está pagando", value=sum(v["Saldo"] for v in ventas_con_saldo), format="%.2f")
-                    met_c = ui.select(METODOS, value="QR", label="Método (QR, efectivo...)", new_value_mode="add").classes("w-44")
-                    venta_c = (
-                        ui.select(
-                            {v["ID_Venta"]: f"Venta {v['ID_Venta']} (saldo Bs {v['Saldo']:,.2f})" for v in ventas_con_saldo},
-                            value=ventas_con_saldo[0]["ID_Venta"],
-                            label="Este cobro es para la venta:",
-                        ).classes("w-72")
-                        if len(ventas_con_saldo) > 1
-                        else None
-                    )
-                    n_c = ui.input("Nota (opcional)")
-                if venta_c:
+                varias = len(ventas_con_saldo) > 1
+                venta_c = None
+                if varias:
                     ui.label(
                         "Esta empresa tiene varias ventas abiertas: elegí a cuál se aplica este cobro "
                         "(así el saldo de cada venta queda exacto)."
                     ).classes("text-xs opacity-60")
+                with ui.grid(columns=5 if varias else 4).classes("w-full gap-3 items-end"):
+                    f_c = input_fecha("Fecha")
+                    m_c = ui.number(
+                        "Monto que está pagando",
+                        value=sum(v["Saldo"] for v in ventas_con_saldo),
+                        format="%.2f",
+                    ).classes("w-full").props("outlined dense")
+                    met_c = ui.select(METODOS, value="QR", label="Método (QR, efectivo...)", new_value_mode="add").classes(
+                        "w-full"
+                    ).props("outlined dense")
+                    if varias:
+                        venta_c = ui.select(
+                            {v["ID_Venta"]: f"Venta {v['ID_Venta']} (saldo Bs {v['Saldo']:,.2f})" for v in ventas_con_saldo},
+                            value=ventas_con_saldo[0]["ID_Venta"],
+                            label="Este cobro es para la venta:",
+                        ).classes("w-full").props("outlined dense")
+                    n_c = ui.input("Nota (opcional)").classes("w-full").props("outlined dense")
                 ui.button(
                     "REGISTRAR COBRO",
                     icon="payments",
@@ -1017,12 +1022,12 @@ def pagina_ventas():
 
         with ui.card().classes("w-full bg-gray-100 dark:bg-gray-800"):
             ui.label("Registrar pago").classes("font-semibold text-sm")
-            with ui.row().classes("w-full flex-wrap items-end gap-2"):
+            with ui.grid(columns=4).classes("w-full gap-3 items-end"):
                 f_p = input_fecha("Fecha del pago")
-                m_p = ui.number("Monto", value=saldo, format="%.2f")
-                met_p = ui.select(METODOS, value="Efectivo", label="Método", new_value_mode="add").classes("w-40")
-                n_p = ui.input("Nota")
-                ui.button("Registrar pago", icon="payments", on_click=lambda: _registrar()).props("unelevated dense")
+                m_p = ui.number("Monto", value=saldo, format="%.2f").classes("w-full").props("outlined dense")
+                met_p = ui.select(METODOS, value="Efectivo", label="Método", new_value_mode="add").classes("w-full").props("outlined dense")
+                n_p = ui.input("Nota").classes("w-full").props("outlined dense")
+            ui.button("Registrar pago", icon="payments", on_click=lambda: _registrar()).props("unelevated dense")
 
         def _registrar():
             if not m_p.value or m_p.value <= 0:

@@ -465,16 +465,16 @@ def pagina_gestion():
 
         ui.button("Eliminar pago seleccionado", icon="delete", on_click=_eliminar_pago).props("flat color=negative dense")
 
-        with ui.row().classes("w-full flex-wrap items-end gap-2"):
+        with ui.grid(columns=4).classes("w-full gap-3 items-end"):
             f_pago = input_fecha("Fecha del pago")
-            m_pago = ui.number("Monto", value=(resumen["Saldo"] if resumen else 0.0), format="%.2f")
-            met_pago = ui.select(["Efectivo", "QR", "Transferencia", "Otro"], value="Efectivo", label="Método", new_value_mode="add").classes("w-40")
-            n_pago = ui.input("Nota")
-            ui.button(
-                "Registrar pago",
-                icon="payments",
-                on_click=lambda: _registrar_pago(proveedor, f_pago, m_pago, met_pago, n_pago),
-            ).props("unelevated dense")
+            m_pago = ui.number("Monto", value=(resumen["Saldo"] if resumen else 0.0), format="%.2f").classes("w-full").props("outlined dense")
+            met_pago = ui.select(["Efectivo", "QR", "Transferencia", "Otro"], value="Efectivo", label="Método", new_value_mode="add").classes("w-full").props("outlined dense")
+            n_pago = ui.input("Nota").classes("w-full").props("outlined dense")
+        ui.button(
+            "Registrar pago",
+            icon="payments",
+            on_click=lambda: _registrar_pago(proveedor, f_pago, m_pago, met_pago, n_pago),
+        ).props("unelevated dense")
 
     def _registrar_pago(proveedor, f_pago, m_pago, met_pago, n_pago):
         if not m_pago.value or m_pago.value <= 0:
@@ -601,18 +601,18 @@ def pagina_gestion():
 
         with ui.card().classes("w-full bg-gray-100 dark:bg-gray-800"):
             ui.label("Registrar cobro").classes("font-semibold")
-            with ui.row().classes("w-full flex-wrap items-end gap-2"):
+            with ui.grid(columns=5).classes("w-full gap-3 items-end"):
                 f_c = input_fecha("Fecha")
-                m_c = ui.number("Monto", value=saldo, format="%.2f")
-                met_c = ui.select(["QR", "Efectivo", "Transferencia", "Otro"], value="QR", label="Método", new_value_mode="add").classes("w-36")
-                n_c = ui.input("Nota")
+                m_c = ui.number("Monto", value=saldo, format="%.2f").classes("w-full").props("outlined dense")
+                met_c = ui.select(["QR", "Efectivo", "Transferencia", "Otro"], value="QR", label="Método", new_value_mode="add").classes("w-full").props("outlined dense")
+                n_c = ui.input("Nota").classes("w-full").props("outlined dense")
                 venta_sel_ui = ui.select(
                     {v["ID_Venta"]: f"Venta {v['ID_Venta']} (Bs {v['Saldo']:,.2f})" for v in ventas if v["Saldo"] > 0.005}
                     or {"": "Todas cobradas"},
                     value=(next((v["ID_Venta"] for v in ventas if v["Saldo"] > 0.005), "")),
                     label="Aplicar a venta",
-                ).classes("w-56")
-                ui.button("Registrar cobro", icon="payments", on_click=lambda: _registrar()).props("unelevated dense")
+                ).classes("w-full").props("outlined dense")
+            ui.button("Registrar cobro", icon="payments", on_click=lambda: _registrar()).props("unelevated dense")
 
         def _registrar():
             if not venta_sel_ui.value:
