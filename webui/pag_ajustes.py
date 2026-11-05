@@ -2,6 +2,7 @@
 
 from nicegui import ui
 
+import check_setup
 import config
 import db
 import paquete_datos
@@ -58,6 +59,30 @@ def seccion_sistema():
 
     with ui.card().classes("w-full"):
         ui.label("Sistema").classes("font-semibold")
+        with ui.row().classes("w-full items-center gap-2"):
+            ui.label("🩺 Salud del sistema: revisa Python, dependencias, .env, Gemini (prueba real), base y carpetas.").classes(
+                "text-sm opacity-70"
+            )
+            ui.space()
+
+            async def _salud():
+                from nicegui import run
+
+                resultados = await run.io_bound(check_setup.verificar_salud)
+                with ui.dialog() as dialogo, ui.card().classes("w-full max-w-[720px]"):
+                    ui.label("🩺 Salud del sistema").classes("text-lg font-bold")
+                    for r in resultados:
+                        color = {"OK": "green", "FALLA": "red", "AVISO": "orange"}[r["estado"]]
+                        with ui.row().classes("w-full items-start gap-2"):
+                            ui.badge(r["estado"], color=color).props("text-color=white")
+                            with ui.column().classes("gap-0"):
+                                ui.label(r["chequeo"]).classes("font-semibold text-sm")
+                                ui.label(r["detalle"]).classes("text-xs opacity-70")
+                    with ui.row().classes("w-full justify-end q-mt-sm"):
+                        ui.button("Cerrar", on_click=dialogo.close).props("flat dense")
+                dialogo.open()
+
+            ui.button("🩺 Salud del sistema", icon="health_and_safety", on_click=_salud).props("unelevated dense no-caps")
         conn = db.conexion()
         conteo = {
             k: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]

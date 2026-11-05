@@ -7,19 +7,30 @@ echo  Facturador OCR - INSTALACION
 echo ============================================
 
 set "PYEXE="
-where python >nul 2>&1
-if not errorlevel 1 set "PYEXE=python"
-if not defined PYEXE (
-    where py >nul 2>&1
-    if not errorlevel 1 set "PYEXE=py"
-)
-if not defined PYEXE if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set "PYEXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+set "PYARGS="
+if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set "PYEXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
 if not defined PYEXE if exist "%ProgramFiles%\Python312\python.exe" set "PYEXE=%ProgramFiles%\Python312\python.exe"
-
 if defined PYEXE goto tiene_python
 
+py -3.12 --version >nul 2>&1
+if errorlevel 1 goto probar_python
+set "PYEXE=py"
+set "PYARGS=-3.12"
+goto tiene_python
+
+:probar_python
+where python >nul 2>&1
+if errorlevel 1 goto instalar_python
+set "PYVERSTR="
+for /f "tokens=*" %%v in ('python --version 2^>^&1') do set "PYVERSTR=%%v"
+echo %PYVERSTR% | findstr /C:"3.12" >nul
+if errorlevel 1 goto instalar_python
+set "PYEXE=python"
+goto tiene_python
+
+:instalar_python
 echo.
-echo  [1/4] Python no esta instalado. Instalando Python 3.12 automaticamente...
+echo  [1/5] No se encontro Python 3.12. Instalandolo automaticamente...
 where winget >nul 2>&1
 if not errorlevel 1 (
     echo   Instalando con winget (tarda unos minutos, NO cierres esta ventana)...
@@ -37,40 +48,48 @@ if not errorlevel 1 (
 )
 
 set "PYEXE="
-where python >nul 2>&1
-if not errorlevel 1 set "PYEXE=python"
-if not defined PYEXE (
-    where py >nul 2>&1
-    if not errorlevel 1 set "PYEXE=py"
-)
-if not defined PYEXE if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set "PYEXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
-if not defined PYEXE (
-    echo   [X] Python se instalo pero no se detecto. Cierra esta ventana, abrila de nuevo y corre instalar.bat otra vez.
+set "PYARGS="
+if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set "PYEXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+if not defined PYEXE if exist "%ProgramFiles%\Python312\python.exe" set "PYEXE=%ProgramFiles%\Python312\python.exe"
+if defined PYEXE goto tiene_python
+py -3.12 --version >nul 2>&1
+if errorlevel 1 (
+    echo   [X] Python 3.12 se instalo pero no se detecto. Cierra esta ventana, abrila de nuevo y corre instalar.bat otra vez.
     pause
     exit /b 1
 )
-echo  Python instalado y detectado OK.
+set "PYEXE=py"
+set "PYARGS=-3.12"
 
 :tiene_python
 set "PYVER="
-"%PYEXE%" --version > "%TEMP%\pyver.txt" 2>&1
+"%PYEXE%" %PYARGS% --version > "%TEMP%\pyver.txt" 2>&1
 set /p PYVER=<"%TEMP%\pyver.txt"
 echo.
-echo  Python detectado: %PYVER%
+echo  Python 3.12 detectado: %PYVER%
 echo.
-echo  [2/4] Creando entorno virtual...
-if exist "venv\Scripts\python.exe" (
-    echo   (ya existia, se reusa)
-) else (
-    "%PYEXE%" -m venv venv
-    if errorlevel 1 (
-        echo  [X] No se pudo crear el entorno virtual.
-        pause
-        exit /b 1
-    )
+
+REM ---- venv: debe ser de Python 3.12; si no, se recrea ----
+if not exist "venv\Scripts\python.exe" goto crear_venv
+set "VVER="
+venv\Scripts\python.exe --version > "%TEMP%\pyver.txt" 2>&1
+set /p VVER=<"%TEMP%\pyver.txt"
+echo %VVER% | findstr /C:"3.12" >nul
+if not errorlevel 1 goto venv_ok
+echo  [i] El venv existente usa %VVER% y NO es Python 3.12. Se borra y se recrea...
+rmdir /s /q venv
+
+:crear_venv
+echo  [2/5] Creando entorno virtual con Python 3.12...
+"%PYEXE%" %PYARGS% -m venv venv
+if errorlevel 1 (
+    echo  [X] No se pudo crear el entorno virtual.
+    pause
+    exit /b 1
 )
 
-echo  [3/4] Instalando dependencias (tarda varios minutos, NO cierres)...
+:venv_ok
+echo  [3/5] Instalando dependencias (tarda varios minutos, NO cierres)...
 venv\Scripts\python.exe -m pip install --upgrade pip --quiet
 venv\Scripts\python.exe -m pip install -r requirements.txt
 if errorlevel 1 (
@@ -80,7 +99,7 @@ if errorlevel 1 (
 )
 
 if not exist ".env" (
-    echo  [4/4] Creando .env desde la plantilla...
+    echo  [4/5] Creando .env desde la plantilla...
     copy .env.example .env >nul
     echo  ============================================================
     echo   IMPORTANTE: abre el archivo .env y configura:
@@ -88,11 +107,11 @@ if not exist ".env" (
     echo   (Sin esa clave la lectura automatica de facturas no funciona)
     echo  ============================================================
 ) else (
-    echo  [4/4] .env ya existe: se conserva tu configuracion.
+    echo  [4/5] .env ya existe: se conserva tu configuracion.
 )
 
 echo.
-echo  Verificando instalacion...
+echo  [5/5] Verificando instalacion...
 venv\Scripts\python.exe check_setup.py
 
 echo.

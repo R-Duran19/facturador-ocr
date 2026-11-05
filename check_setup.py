@@ -1,88 +1,126 @@
+"""Chequeo de salud del sistema: Python, dependencias, .env, Gemini, base y carpetas.
+
+CLI:    venv/Scripts/python.exe check_setup.py   (o verificar.bat)
+UI:     Configuración → Sistema → botón "Salud del sistema"
+"""
+
 import sys
 
 import config
 
+__all__ = ["verificar_salud"]
+
+
+def verificar_salud(probar_gemini: bool = True) -> list:
+    """Devuelve [{chequeo, estado(OK/FALLA/AVISO), detalle}]. Nunca lanza excepciones."""
+    chequeos = []
+
+    def agregar(nombre: str, ok: bool, detalle: str, aviso: bool = False) -> None:
+        chequeos.append(
+            {"chequeo": nombre, "estado": "AVISO" if aviso else ("OK" if ok else "FALLA"), "detalle": detalle}
+        )
+
+    version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    buena = version.startswith(("3.11", "3.12"))
+    agregar("Python", buena, f"Python {version}" + ("" if buena else " (se recomienda 3.12)"), aviso=not buena)
+
+    faltan = []
+    for modulo in ("nicegui", "pydantic", "dotenv", "pandas", "openpyxl", "fpdf", "pymupdf", "PIL", "google.genai"):
+        try:
+            __import__(modulo)
+        except Exception:
+            faltan.append(modulo)
+    agregar("Dependencias", not faltan, "todas instaladas" if not faltan else f"faltan: {', '.join(faltan)}")
+
+    tiene_key = bool(config.GEMINI_API_KEY) and "tu_api_key" not in config.GEMINI_API_KEY
+    agregar(
+        "API de Gemini (.env)",
+        tiene_key,
+        f"configurada ({config.GEMINI_API_KEY[:8]}...)" if tiene_key else "GEMINI_API_KEY vacía o mal configurada en .env",
+    )
+
+    from pathlib import Path
+
+    problemas = []
+    for carpeta in (config.CARPETA_ARCHIVOS, config.CARPETA_EXPORTS, config.CARPETA_RESPALDOS):
+        try:
+            p = Path(carpeta)
+            p.mkdir(parents=True, exist_ok=True)
+            t = p / "_health.tmp"
+            t.write_text("x", encoding="utf-8")
+            t.unlink()
+        except Exception:
+            problemas.append(str(carpeta))
+    agregar(
+        "Carpetas (archivos/exports/backups)",
+        not problemas,
+        "escribibles" if not problemas else f"sin permiso: {', '.join(problemas)}",
+    )
+
+    try:
+        import respaldos
+
+        n = len(respaldos.listar_backups())
+        agregar("Backups", n > 0, f"{n} copias en {config.CARPETA_RESPALDOS}/", aviso=n == 0)
+    except Exception as e:
+        agregar("Backups", False, str(e))
+
+    try:
+        import db
+
+        db.inicializar()
+        conn = db.conexion()
+        conteo = {
+            t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            for t in ("proveedores", "clientes", "facturas", "ventas", "cobros", "pagos_proveedor")
+        }
+        conn.close()
+        agregar("Base de datos", True, ", ".join(f"{k}: {v}" for k, v in conteo.items()))
+    except Exception as e:
+        agregar("Base de datos", False, str(e))
+
+    try:
+        import db
+
+        activos = [c["clave"] for c in db.listar_campos() if c["activo"] and c["en_ia"]]
+        agregar("Campos que extrae la IA", bool(activos), ", ".join(activos) or "ninguno activo")
+    except Exception as e:
+        agregar("Campos que extrae la IA", False, str(e))
+
+    if probar_gemini:
+        if tiene_key:
+            try:
+                from google import genai
+
+                client = genai.Client(api_key=config.GEMINI_API_KEY)
+                resp = client.models.generate_content(
+                    model=config.MODEL_NAME, contents="Responde únicamente con la palabra: OK"
+                )
+                texto = (resp.text or "").strip()[:40]
+                agregar("Gemini (prueba real)", bool(texto), f"{config.MODEL_NAME} respondió: {texto}")
+            except Exception as e:
+                agregar("Gemini (prueba real)", False, str(e)[:180])
+        else:
+            agregar("Gemini (prueba real)", False, "sin API key no se puede probar", aviso=True)
+
+    return chequeos
+
 
 def main() -> int:
     print("=" * 60)
-    print("VERIFICACION DE SETUP - Facturador OCR")
+    print("SALUD DEL SISTEMA - Facturador OCR")
     print("=" * 60)
-    ok = True
-
-    print("\n[1] Variables de entorno (.env)")
-    if not config.GEMINI_API_KEY or "PEGA" in config.GEMINI_API_KEY:
-        print("  [FALTA] GEMINI_API_KEY no configurada")
-        ok = False
-    else:
-        print(f"  [OK] GEMINI_API_KEY configurada ({config.GEMINI_API_KEY[:8]}...)")
-        if not (config.GEMINI_API_KEY.startswith("AIza") or config.GEMINI_API_KEY.startswith("AQ.")):
-            print("  [AVISO] Formato de key inusual (ni AIza ni AQ.). Verificala.")
-
-    if not config.GOOGLE_SHEET_MASTER_ID or "PEGA" in config.GOOGLE_SHEET_MASTER_ID:
-        print("  [AVISO] GOOGLE_SHEET_MASTER_ID no configurado (solo necesario para migrar desde Sheets)")
-    else:
-        print(f"  [OK] GOOGLE_SHEET_MASTER_ID configurado ({config.GOOGLE_SHEET_MASTER_ID[:12]}...)")
-
-    print(f"\n[2] Modelo IA")
-    print(f"  Principal:  {config.MODEL_NAME}")
-    print(f"  Fallbacks:  {', '.join(config.FALLBACK_MODELS)}")
-
-    import os
-
-    print("\n[3] Credenciales de servicio")
-    if not os.path.exists(config.SERVICE_ACCOUNT_FILE):
-        print(f"  [FALTA] No existe '{config.SERVICE_ACCOUNT_FILE}'")
-        ok = False
-    else:
-        print(f"  [OK] '{config.SERVICE_ACCOUNT_FILE}' encontrado")
-
-    if ok:
-        print("\n[4] Prueba de API de Gemini")
-        try:
-            from google import genai
-
-            client = genai.Client(api_key=config.GEMINI_API_KEY)
-            resp = client.models.generate_content(
-                model=config.MODEL_NAME, contents="Responde unicamente con la palabra: OK"
-            )
-            print(f"  [OK] Gemini respondio: {resp.text.strip()[:40]}")
-        except Exception as e:
-            print(f"  [ERROR] {e}")
-            ok = False
-
-        print("\n[5] Prueba de base de datos SQLite")
-        try:
-            import db
-
-            db.inicializar()
-            conn = db.conexion()
-            conteo = {
-                "proveedores": conn.execute("SELECT COUNT(*) FROM proveedores").fetchone()[0],
-                "clientes": conn.execute("SELECT COUNT(*) FROM clientes").fetchone()[0],
-                "facturas": conn.execute("SELECT COUNT(*) FROM facturas").fetchone()[0],
-                "ventas": conn.execute("SELECT COUNT(*) FROM ventas").fetchone()[0],
-                "campos": conn.execute("SELECT COUNT(*) FROM campos_config").fetchone()[0],
-            }
-            conn.close()
-            print(f"  [OK] facturas.db operativa: {conteo}")
-        except Exception as e:
-            print(f"  [ERROR] {e}")
-            ok = False
-
-        print("\n[6] Campos configurables")
-        try:
-            import db
-
-            activos_ia = [c["clave"] for c in db.listar_campos() if c["activo"] and c["en_ia"]]
-            print(f"  [OK] Campos que extrae la IA: {activos_ia}")
-        except Exception as e:
-            print(f"  [ERROR] {e}")
-            ok = False
-
-    print("\n" + "=" * 60)
-    print("RESULTADO: " + ("TODO OK - podes correr: streamlit run app.py" if ok else "HAY PROBLEMAS - revisa los mensajes de arriba"))
+    resultados = verificar_salud()
+    fallas = 0
+    for r in resultados:
+        marca = {"OK": "[OK]   ", "FALLA": "[FALLA]", "AVISO": "[AVISO]"}[r["estado"]]
+        if r["estado"] == "FALLA":
+            fallas += 1
+        print(f" {marca} {r['chequeo']:<30} {r['detalle']}")
     print("=" * 60)
-    return 0 if ok else 1
+    print("RESULTADO: " + ("TODO OK" if fallas == 0 else f"{fallas} FALLA(S) — revisa arriba"))
+    print("=" * 60)
+    return 0 if fallas == 0 else 1
 
 
 if __name__ == "__main__":
