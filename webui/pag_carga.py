@@ -374,6 +374,7 @@ document.addEventListener('click', function (ev) {
                     for i, a in enumerate(lote["archivos"]):
                         if a["estado"] == "DUPLICADO":
                             acciones.append((i, a["nombre"], "Adjuntar PDF a la existente", "orange", "attach_file"))
+                            acciones.append((i, a["nombre"], "Guardar como NUEVA factura", "green", "add_task"))
                         elif a["estado"] == "ERROR":
                             acciones.append((i, a["nombre"], "Reintentar", "blue", "replay"))
                     if acciones:
@@ -400,6 +401,12 @@ document.addEventListener('click', function (ev) {
             ok = COLA.guardar_duplicado(lote_id, indice)
             ui.notify(
                 "PDF adjuntado a la factura existente ✔" if ok else "No se pudo adjuntar (el registro ya no está disponible).",
+                type="positive" if ok else "warning",
+            )
+        elif tipo == "Guardar como NUEVA factura":
+            ok = COLA.guardar_como_nueva(lote_id, indice)
+            ui.notify(
+                "Factura guardada como NUEVA ✔ (con su venta al cliente)" if ok else "No se pudo guardar (el registro ya no está disponible).",
                 type="positive" if ok else "warning",
             )
         elif tipo == "Reintentar":

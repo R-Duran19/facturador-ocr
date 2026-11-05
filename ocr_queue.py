@@ -134,7 +134,7 @@ class ColaOCR:
                 return
             registro = self._registro_de_datos(datos, lote)
             clave = _clave_dedup(registro)
-            if any(clave) and db.existe_duplicado(*clave):
+            if any(clave) and db.existe_duplicado(*clave, monto=_num(registro.get("Monto_Total"))):
                 trabajo.estado = "DUPLICADO"
                 return
             tipo = _detectar_tipo(trabajo.datos, trabajo.nombre)
@@ -234,14 +234,12 @@ class ColaOCR:
         clave = _clave_dedup(registro)
         existente = None
         if any(clave):
-            for f in db.leer_facturas_mes(lote.mes):
-                if _clave_dedup(f) == clave:
-                    existente = f
-                    break
+            existente = db.buscar_factura_similar(*clave)
 
         if existente:
+            mes_destino = existente.get("Mes") or lote.mes
             ruta = archivos.guardar_archivo_original(
-                lote.mes,
+                mes_destino,
                 lote.proveedor,
                 trabajo.nombre,
                 trabajo.datos,
@@ -253,7 +251,7 @@ class ColaOCR:
                 existente["Fecha_Emision"] = registro["Fecha_Emision"]
             if not existente.get("Cod_Autorizacion") and registro.get("Cod_Autorizacion"):
                 existente["Cod_Autorizacion"] = registro["Cod_Autorizacion"]
-            db.actualizar_factura(lote.mes, existente)
+            db.actualizar_factura(mes_destino, existente)
             trabajo.estado = "OK"
             trabajo.resultado["_adjuntado"] = True
             return True
@@ -266,6 +264,33 @@ class ColaOCR:
             tipo,
             registro.get("Nro_Factura", ""),
         )
+        db.registrar_facturas_batch(lote.mes, [registro])
+        trabajo.estado = "OK"
+        self._auto_venta(lote, [registro])
+        return True
+
+    def guardar_como_nueva(self, lote_id: str, indice: int) -> bool:
+        """Fuerza el registro de una factura marcada DUPLICADO como factura nueva."""
+        with self._lock:
+            lote = self._lotes.get(lote_id)
+            trabajo = lote.archivos[indice] if lote and 0 <= indice < len(lote.archivos) else None
+        if not lote or not trabajo or trabajo.resultado is None:
+            return False
+        registro = self._registro_de_datos(trabajo.resultado, lote)
+        tipo = "pdf"
+        try:
+            tipo = _detectar_tipo(trabajo.datos, trabajo.nombre)
+        except Exception:
+            pass
+        registro["Ruta_Archivo"] = archivos.guardar_archivo_original(
+            lote.mes,
+            lote.proveedor,
+            trabajo.nombre,
+            trabajo.datos,
+            tipo,
+            registro.get("Nro_Factura", ""),
+        )
+        registro["Observaciones"] = ((registro.get("Observaciones") or "") + " | guardada manual como nueva").strip(" |")
         db.registrar_facturas_batch(lote.mes, [registro])
         trabajo.estado = "OK"
         self._auto_venta(lote, [registro])
