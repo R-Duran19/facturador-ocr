@@ -10,10 +10,12 @@ if not exist "venv\Scripts\python.exe" (
     exit /b
 )
 
-REM ---------- Actualizador automatico: git pull al arrancar ----------
+REM Si ya pasamos por la actualizacion en esta corrida, arrancar directo
+if "%YA_ACTUALIZADO%"=="1" goto arrancar
+
 where git >nul 2>&1
-if errorlevel 1 goto sin_actualizar
-if not exist ".git" goto sin_actualizar
+if errorlevel 1 goto arrancar
+if not exist ".git" goto arrancar
 
 echo  Buscando actualizaciones...
 git pull --ff-only --quiet
@@ -22,12 +24,15 @@ if errorlevel 1 (
 ) else (
     echo  Sistema actualizado con la ultima version.
 )
-goto arrancar
 
-:sin_actualizar
-echo  [i] Sin actualizador git: se inicia la version instalada.
+REM IMPORTANTE: el pull puede haber reemplazado ESTE archivo. Se relanza el .bat
+REM en una ventana nueva (que hereda YA_ACTUALIZADO=1) para leerlo fresco del disco.
+set "YA_ACTUALIZADO=1"
+start "" "%~f0"
+exit /b
 
 :arrancar
+title Facturador OCR
 netstat -ano | findstr :8080 | findstr LISTENING >nul
 if %errorlevel%==0 (
     echo.
