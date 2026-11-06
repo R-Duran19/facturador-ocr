@@ -12,20 +12,20 @@ import reportes
 
 __all__ = ["pdf_empresa", "pdf_resumen_mes", "pdfs_por_empresa_zip"]
 
-_VERDE_TITULO = (216, 232, 222)
-_VERDE_TITULO_TEXTO = (27, 67, 50)
-_VERDE_SECCION = (58, 110, 82)
-_HEADER_FILL = (255, 242, 204)
-_HEADER_TEXT = (120, 84, 6)
-_ZEBRA = (250, 252, 250)
+_AZUL_TITULO = (31, 78, 121)
+_VERDE_SECCION = (47, 84, 150)
+_HEADER_FILL = (68, 114, 196)
+_HEADER_TEXT = (255, 255, 255)
+_ZEBRA = (245, 248, 252)
+_TOTAL_FILL = (217, 226, 243)
 
 
 def _pdf_base(titulo: str) -> FPDF:
     pdf = FPDF(orientation="L", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    pdf.set_fill_color(*_VERDE_TITULO)
-    pdf.set_text_color(*_VERDE_TITULO_TEXTO)
+    pdf.set_fill_color(*_AZUL_TITULO)
+    pdf.set_text_color(255, 255, 255)
     pdf.set_font("helvetica", "B", 12)
     pdf.cell(0, 10, titulo, new_x="LMARGIN", new_y="NEXT", align="C", fill=True)
     pdf.set_text_color(0, 0, 0)
@@ -72,7 +72,7 @@ def _tabla(pdf: FPDF, anchos: list, fila: list, estilo: str = "") -> None:
         pdf.set_fill_color(*_HEADER_FILL)
     elif estilo == "total":
         pdf.set_font("helvetica", "B", 8.5)
-        pdf.set_fill_color(240, 240, 240)
+        pdf.set_fill_color(*_TOTAL_FILL)
     else:
         pdf.set_font("helvetica", "", 8)
     for texto, ancho in zip(fila, anchos):
