@@ -12,12 +12,13 @@ import reportes
 
 __all__ = ["pdf_empresa", "pdf_resumen_mes", "pdfs_por_empresa_zip"]
 
-_AZUL_TITULO = (31, 78, 121)
-_VERDE_SECCION = (47, 84, 150)
-_HEADER_FILL = (68, 114, 196)
-_HEADER_TEXT = (255, 255, 255)
-_ZEBRA = (245, 248, 252)
-_TOTAL_FILL = (217, 226, 243)
+_AZUL_TITULO = (219, 229, 241)
+_TEXTO_OSCURO = (31, 56, 100)
+_VERDE_SECCION = (226, 235, 246)
+_HEADER_FILL = (232, 240, 248)
+_HEADER_TEXT = (31, 56, 100)
+_ZEBRA = (248, 250, 253)
+_TOTAL_FILL = (223, 232, 245)
 
 
 def _pdf_base(titulo: str) -> FPDF:
@@ -25,7 +26,7 @@ def _pdf_base(titulo: str) -> FPDF:
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     pdf.set_fill_color(*_AZUL_TITULO)
-    pdf.set_text_color(255, 255, 255)
+    pdf.set_text_color(*_TEXTO_OSCURO)
     pdf.set_font("helvetica", "B", 12)
     pdf.cell(0, 10, titulo, new_x="LMARGIN", new_y="NEXT", align="C", fill=True)
     pdf.set_text_color(0, 0, 0)
@@ -37,7 +38,7 @@ def _pdf_base(titulo: str) -> FPDF:
 def _titulo_seccion(pdf: FPDF, texto: str) -> None:
     pdf.ln(1)
     pdf.set_fill_color(*_VERDE_SECCION)
-    pdf.set_text_color(255, 255, 255)
+    pdf.set_text_color(*_TEXTO_OSCURO)
     pdf.set_font("helvetica", "B", 12)
     pdf.cell(0, 9, texto, new_x="LMARGIN", new_y="NEXT", align="C", fill=True)
     pdf.set_text_color(0, 0, 0)

@@ -184,7 +184,7 @@ def pagina_ventas():
                     "cobrado": cobrado,
                     "saldo": saldo,
                     "estado": est,
-                    "proveedores": " / ".join(provs),
+                    "proveedores": " / ".join(provs[:3]) + (f"  (+{len(provs) - 3} mas)" if len(provs) > 3 else ""),
                     "entregado": entregado,
                     "whats": _texto_whatsapp(clientes.get(cliente, {})),
                     "bancarizado": clientes.get(cliente, {}).get("Bancarizado", "¿?"),
@@ -200,7 +200,10 @@ def pagina_ventas():
             sus_fact = [f for f in facturas_mes if f["Proveedor_Asignado"] == d["Proveedor"]]
             d["n_facturas"] = len(sus_fact)
             emisoras = sorted({f["Razon_Social"] for f in sus_fact if f["Razon_Social"]})
-            d["empresas"] = " / ".join(emisoras) if emisoras else "—"
+            if len(emisoras) > 3:
+                d["empresas"] = " / ".join(emisoras[:3]) + f"  (+{len(emisoras) - 3} mas)"
+            else:
+                d["empresas"] = " / ".join(emisoras) if emisoras else "—"
         return datos
 
     def _venta_de(factura: dict, ventas: list):
