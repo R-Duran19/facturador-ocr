@@ -6,7 +6,9 @@ import check_setup
 import config
 import db
 import paquete_datos
+import reset_datos
 import respaldos
+from webui.componentes import confirmar
 
 def seccion_sistema():
     with ui.card().classes("w-full"):
@@ -141,6 +143,74 @@ def seccion_sistema():
             on_upload=_importar_paquete,
             auto_upload=True,
         ).props("accept=.zip").classes("w-full")
+
+    with ui.card().classes("w-full border-2").style("border-color: #B91C1C;"):
+        ui.label("🧨 Reset de datos (borrar mes o empezar de cero)").classes("font-semibold")
+        ui.label(
+            "Siempre se crea un backup automático en backups/ antes de borrar. "
+            "Después de borrar se recarga la página sola para actualizar los selectores de mes."
+        ).classes("text-xs opacity-60")
+
+        meses = db.listar_meses()
+
+        def _borrar_mes():
+            mes = sel_mes_borrar.value
+            if not mes:
+                ui.notify("No hay meses para borrar.", type="info")
+                return
+
+            def accion():
+                resumen = reset_datos.borrar_meses([mes], borrar_pdfs=chk_pdfs_mes.value)
+                info = resumen.get(mes, {})
+                ui.notify(
+                    f"Mes {mes} borrado: {info.get('facturas', 0)} facturas, {info.get('ventas', 0)} ventas. Backup creado antes.",
+                    type="positive",
+                    timeout=6,
+                )
+                ui.navigate.to("/configuracion")
+
+            confirmar(f"¿Borrar TODO el mes {mes}? (backup automático antes)", accion, "Borrar mes")
+
+        def _borrar_todo():
+            conservar = chk_catalogo.value
+            detalle = "conservando clientes y proveedores" if conservar else "incluyendo CLIENTES y PROVEEDORES"
+
+            def accion():
+                reset_datos.borrar_todo(conservar_catalogo=conservar, borrar_pdfs=chk_pdfs_todo.value)
+                ui.notify(f"Sistema reseteado ({detalle}). Backup creado antes.", type="positive", timeout=6)
+                ui.navigate.to("/configuracion")
+
+            confirmar(
+                f"¿Borrar TODO el historial de facturas/ventas/cobros/pagos/deudas ({detalle})? (backup automático antes)",
+                accion,
+                "Sí, borrar todo",
+            )
+
+        with ui.row().classes("w-full items-end gap-3 flex-wrap q-mt-sm"):
+            sel_mes_borrar = ui.select(
+                meses, value=meses[0] if meses else None,
+                label="Mes a borrar",
+            ).classes("w-64")
+            chk_pdfs_mes = ui.checkbox("también borrar sus PDFs")
+            ui.button(
+                "Borrar ese mes",
+                icon="delete_sweep",
+                color="orange",
+                on_click=_borrar_mes,
+            ).props("unelevated dense no-caps")
+
+        ui.separator().classes("q-my-sm")
+        with ui.row().classes("w-full items-center gap-3 flex-wrap"):
+            chk_catalogo = ui.checkbox(
+                "conservar clientes y proveedores", value=True,
+            ).tooltip("Desmarcalo solo si querés arrancar absolutamente de cero")
+            chk_pdfs_todo = ui.checkbox("también borrar todos los PDFs")
+            ui.button(
+                "Borrar TODO (facturas, ventas, cobros, pagos, deudas)",
+                icon="dangerous",
+                color="negative",
+                on_click=_borrar_todo,
+            ).props("unelevated dense no-caps")
 
     with ui.card().classes("w-full"):
         ui.label("Respaldos de la base de datos").classes("font-semibold")
