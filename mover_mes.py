@@ -50,6 +50,26 @@ def mover(origen: str, destino: str, raiz: Path = None) -> dict:
         )
         movidos += 1
 
+    MESES_ES = [
+        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+    ]
+
+    def _legible(clave: str) -> str:
+        try:
+            anio, num, _ = str(clave).split("_", 2)
+            return f"{MESES_ES[int(num) - 1]} {anio}"
+        except Exception:
+            return str(clave)
+
+    leg_origen, leg_destino = _legible(origen), _legible(destino)
+    if leg_origen != leg_destino:
+        n_deudas = conn.execute(
+            "UPDATE deudas_manuales SET mes_origen=? WHERE mes_origen=?", (leg_destino, leg_origen)
+        ).rowcount
+    else:
+        n_deudas = 0
+
     conn.commit()
 
     carpeta_origen = raiz / carpeta_archivos / origen
@@ -66,7 +86,13 @@ def mover(origen: str, destino: str, raiz: Path = None) -> dict:
             pass
 
     conn.close()
-    return {"facturas": n_facturas, "ventas": n_ventas, "pagos": n_pagos, "pdfs_movidos": movidos}
+    return {
+        "facturas": n_facturas,
+        "ventas": n_ventas,
+        "pagos": n_pagos,
+        "pdfs_movidos": movidos,
+        "deudas_renombradas": n_deudas,
+    }
 
 
 def main() -> int:

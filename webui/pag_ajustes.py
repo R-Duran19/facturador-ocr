@@ -5,6 +5,7 @@ from nicegui import ui
 import check_setup
 import config
 import db
+import mover_mes
 import paquete_datos
 import reset_datos
 import respaldos
@@ -143,6 +144,55 @@ def seccion_sistema():
             on_upload=_importar_paquete,
             auto_upload=True,
         ).props("accept=.zip").classes("w-full")
+
+    with ui.card().classes("w-full border-2").style("border-color: var(--q-primary);"):
+        ui.label("♻ Renombrar un mes (lo cargué con el nombre equivocado)").classes("font-semibold")
+        ui.label(
+            "Mueve TODAS las facturas, ventas, pagos y PDFs del mes elegido al nombre nuevo. "
+            "Los IDs y enlaces no cambian: es un cambio de nombre, no se pierde ni se duplica nada."
+        ).classes("text-xs opacity-60")
+
+        meses_rn = db.listar_meses()
+        with ui.row().classes("w-full items-end gap-3 flex-wrap"):
+            sel_ren_origen = ui.select(
+                meses_rn, value=meses_rn[0] if meses_rn else None,
+                label="Mes actual (el que está mal)",
+            ).classes("w-72")
+            e_ren_destino = ui.input(
+                "Nombre nuevo (formato: 2026_10_Octubre)",
+                value=None,
+            ).classes("w-72").tooltip("Formato: año_mes_Nombre — ej: 2026_10_Octubre")
+            ui.button(
+                "Renombrar mes",
+                icon="drive_file_rename_outline",
+                on_click=lambda: _renombrar_mes(),
+            ).props("unelevated dense no-caps color=primary")
+
+        def _renombrar_mes():
+            import re
+
+            origen, destino = sel_ren_origen.value, (e_ren_destino.value or "").strip()
+            if not origen:
+                ui.notify("No hay meses para renombrar.", type="info")
+                return
+            if not re.match(r"^\d{4}_\d{2}_\S+$", destino):
+                ui.notify("El nombre nuevo tiene que respetar el formato: 2026_10_Octubre", type="warning")
+                return
+            if origen == destino:
+                ui.notify("El nombre nuevo es igual al actual.", type="warning")
+                return
+
+            def accion():
+                resumen = mover_mes.mover(origen, destino)
+                ui.notify(
+                    f"Renombrado {origen} → {destino}: {resumen.get('facturas', 0)} facturas, "
+                    f"{resumen.get('pdfs_movidos', 0)} PDFs movidos.",
+                    type="positive",
+                    timeout=6,
+                )
+                ui.navigate.to("/configuracion")
+
+            confirmar(f"¿Renombrar {origen} → {destino}? (backup automático antes)", accion, "Renombrar")
 
     with ui.card().classes("w-full border-2").style("border-color: #B91C1C;"):
         ui.label("🧨 Reset de datos (borrar mes o empezar de cero)").classes("font-semibold")
