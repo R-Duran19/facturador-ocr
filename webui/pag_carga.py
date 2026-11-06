@@ -112,6 +112,20 @@ document.addEventListener('click', function (ev) {
             with ui.column().classes("items-end"):
                 tarjeta_gasto_ia()
 
+    def _factura_manual():
+        registro = {c["clave"]: (0.0 if c["tipo"] == "numero" else "") for c in db.listar_campos()} | {
+            "ID": "",
+            "Venta_ID": "",
+        }
+        registro["Proveedor_Asignado"] = sel_prov.value or ""
+        registro["Porcentaje_Compra"] = pct_input.value or 0.0
+        dialogo_factura(
+            registro,
+            refrescar=lambda: (pintar_strip.refresh(), pintar_lotes.refresh()),
+            es_nueva=True,
+            mes_nueva=sel_mes.value,
+        )
+
     with ui.row().classes("w-full flex-wrap items-end gap-3"):
         sel_mes = ui.select(
             opciones_mes,
@@ -218,20 +232,6 @@ document.addEventListener('click', function (ev) {
         estado_archivos["archivos"].append((nombre, datos))
         pintar_pend()
         ui.notify(f"✅ {nombre} listo ({len(estado_archivos['archivos'])} en cola)", type="positive", timeout=1)
-
-    def _factura_manual():
-        registro = {c["clave"]: (0.0 if c["tipo"] == "numero" else "") for c in db.listar_campos()} | {
-            "ID": "",
-            "Venta_ID": "",
-        }
-        registro["Proveedor_Asignado"] = sel_prov.value or ""
-        registro["Porcentaje_Compra"] = pct_input.value or 0.0
-        dialogo_factura(
-            registro,
-            refrescar=lambda: (pintar_strip.refresh(), pintar_lotes.refresh()),
-            es_nueva=True,
-            mes_nueva=sel_mes.value,
-        )
 
     def _procesar():
         archivos = estado_archivos["archivos"]
