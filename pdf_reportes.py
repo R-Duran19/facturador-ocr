@@ -131,19 +131,21 @@ def pdf_empresa(cliente: str, mes: str) -> bytes:
         filas.append(
             [
                 _limpia(f["Fecha_Emision"] or "-"),
+                _limpia(f["Razon_Social"] or "-"),
+                _limpia(f["NIT_Emisor"] or "-"),
                 _limpia(f["Nro_Factura"] or "-"),
                 f"{f['Monto_Total']:,.2f}",
                 f"{pct_venta:g}%",
                 f"{f['Monto_Total'] * pct_venta / 100:,.2f}",
             ]
         )
-    filas.append(["TOTALES", "", f"{total_nominal:,.2f}", "", f"{total_cobrar:,.2f}"])
+    filas.append(["TOTALES", "", "", "", f"{total_nominal:,.2f}", "", f"{total_cobrar:,.2f}"])
     _tabla_datos(
         pdf,
-        [26, 34, 30, 22, 34],
-        ["Fecha", "Factura N", "Monto (Bs)", "% Venta", "A cobrar (Bs)"],
+        [26, 76, 32, 24, 28, 24, 34],
+        ["Fecha", "Empresa emisora", "NIT", "Factura N", "Monto (Bs)", "% Venta", "A cobrar (Bs)"],
         filas,
-        ("CENTER", "CENTER", "RIGHT", "RIGHT", "RIGHT"),
+        ("CENTER", "LEFT", "CENTER", "CENTER", "RIGHT", "RIGHT", "RIGHT"),
     )
 
     pdf.ln(4)
