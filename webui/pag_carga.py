@@ -9,6 +9,7 @@ import config
 import db
 from ocr_queue import COLA
 from webui.componentes import chips_estado, strip_metricas, tarjeta_gasto_ia
+from webui.pag_facturas import dialogo_factura
 from webui.plantilla import pagina
 
 EXTENSIONES = {".jpg", ".jpeg", ".png", ".pdf"}
@@ -214,6 +215,20 @@ document.addEventListener('click', function (ev) {
         pintar_pend()
         ui.notify(f"✅ {nombre} listo ({len(estado_archivos['archivos'])} en cola)", type="positive", timeout=1)
 
+    def _factura_manual():
+        registro = {c["clave"]: (0.0 if c["tipo"] == "numero" else "") for c in db.listar_campos()} | {
+            "ID": "",
+            "Venta_ID": "",
+        }
+        registro["Proveedor_Asignado"] = sel_prov.value or ""
+        registro["Porcentaje_Compra"] = pct_input.value or 0.0
+        dialogo_factura(
+            registro,
+            refrescar=lambda: (pintar_strip.refresh(), pintar_lotes.refresh()),
+            es_nueva=True,
+            mes_nueva=sel_mes.value,
+        )
+
     def _procesar():
         archivos = estado_archivos["archivos"]
         if not archivos:
@@ -291,6 +306,13 @@ document.addEventListener('click', function (ev) {
                 on_click=_procesar,
             ).props("unelevated dense no-caps color=primary").tooltip(
                 "Procesa los archivos subidos con la IA"
+            )
+            ui.button(
+                "➕ Carga manual",
+                icon="post_add",
+                on_click=_factura_manual,
+            ).props("outline dense no-caps").tooltip(
+                "Registrar una factura a mano (sin IA), en el mes seleccionado"
             )
 
         cont_pend = ui.column().classes("w-full gap-2")
