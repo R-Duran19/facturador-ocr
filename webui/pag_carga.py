@@ -95,9 +95,8 @@ document.addEventListener('click', function (ev) {
 """
     )
 
-    meses = sorted(set(db.listar_meses()), reverse=True)
     mes_hoy = _mes_actual()
-    opciones_mes = list(meses)
+    opciones_mes = sorted(set(db.listar_meses()), reverse=True) or [mes_hoy]
     proveedores = [p for p in db.leer_proveedores() if p != "Sin Asignar"]
     fichas = {p["Nombre_Proveedor"]: p for p in db.leer_proveedores_full()}
     opciones_prov = [p for p in proveedores if p in fichas] or proveedores
