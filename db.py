@@ -977,6 +977,48 @@ def canon_cliente(nombre: str) -> str:
     return str(nombre or "").strip()
 
 
+def cliente_por_nit(nit: str):
+    """Busca la ficha del cliente por NIT exacto (sin importar como este escrito el nombre)."""
+    objetivo = str(nit or "").strip()
+    if not objetivo:
+        return None
+    inicializar()
+    conn = conexion()
+    for r in conn.execute("SELECT * FROM clientes"):
+        if str(r["nit"] or "").strip() == objetivo:
+            conn.close()
+            return {
+                "ID_Cliente": r["id"],
+                "Nombre_Razon_Social": r["nombre"],
+                "NIT": r["nit"],
+                "Telefono": r["telefono"],
+                "Notas": r["notas"],
+                "Rubro": r["rubro"] if "rubro" in r.keys() else "",
+                "Pct_Venta": r["pct_venta"] if "pct_venta" in r.keys() else 5.0,
+            }
+    conn.close()
+    return None
+
+
+def resolver_cliente(nombre: str, nit: str) -> str:
+    """Nombre de FICHA del cliente para (nombre_ocr, nit_ocr).
+
+    NIT PRIMERO: si el NIT extraido coincide con un cliente registrado, se usa
+    SIEMPRE esa ficha (P&GES / PYGES / nombre y apellido / nombre y 2 apellidos
+    son la misma empresa mientras el NIT coincida). Si no hay NIT o no matchea,
+    cae al nombre canonico y si tampoco matchea devuelve el nombre tal cual
+    (se creara un cliente nuevo, unico caso de creacion)."""
+    if str(nit or "").strip():
+        info = cliente_por_nit(nit)
+        if info:
+            return info["Nombre_Razon_Social"]
+    canon = canon_cliente(nombre)
+    info = cliente_por_nombre(canon)
+    if info:
+        return info["Nombre_Razon_Social"]
+    return canon or ""
+
+
 def cliente_por_nombre(nombre: str):
     """Busca cliente por nombre canónico y normalizado (sin acentos/puntuación)."""
     inicializar()
@@ -1006,19 +1048,10 @@ def auto_venta_de_facturas(mes: str, cliente_nombre: str, nit: str, facturas_ids
     """Crea o incrementa automáticamente la venta de un cliente con las facturas indicadas.
     Precio = suma de montos nominales × % venta de la ficha del cliente. Sin intervención."""
     inicializar()
-    nombre_cliente = canon_cliente(cliente_nombre)
+    nombre_cliente = resolver_cliente(cliente_nombre, nit)
     if not nombre_cliente:
         raise ValueError("Factura sin comprador/cliente")
     info = cliente_por_nombre(nombre_cliente)
-    if not info and str(nit or "").strip():
-        conn_aux = conexion()
-        fila_nit = conn_aux.execute(
-            "SELECT nombre FROM clientes WHERE TRIM(nit)=TRIM(?) LIMIT 1", (str(nit).strip(),)
-        ).fetchone()
-        conn_aux.close()
-        if fila_nit:
-            nombre_cliente = fila_nit["nombre"]
-            info = cliente_por_nombre(nombre_cliente)
     if not info:
         agregar_cliente(nombre_cliente, nit)
         info = cliente_por_nombre(nombre_cliente)
@@ -1084,7 +1117,7 @@ def reconciliar_ventas_mes(mes: str) -> int:
 
     grupos = {}
     for r in filas:
-        nombre = canon_cliente(r["razon_social_cliente"])
+        nombre = resolver_cliente(r["razon_social_cliente"], r["nit_cliente"])
         if not nombre:
             continue
         clave = (norm_cliente(nombre), str(r["nit_cliente"] or ""))
