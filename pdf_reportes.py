@@ -84,9 +84,11 @@ def pdf_empresa(cliente: str, mes: str) -> bytes:
     facturas.sort(key=lambda f: (f["Fecha_Emision"], f["Nro_Factura"]))
 
     total_nominal = sum(f["Monto_Total"] for f in facturas)
+    total_compra = sum(f["Monto_Total"] * (f.get("Porcentaje_Compra") or 0) / 100.0 for f in facturas)
     total_cobrar = sum(v["Precio_Cobrado"] for v in ventas)
     total_cobrado = sum(v["Total_Cobrado"] for v in ventas)
     saldo = round(total_cobrar - total_cobrado, 2)
+    utilidad = round(total_cobrar - total_compra, 2)
     ficha = next((c for c in db.leer_clientes() if c["Nombre_Razon_Social"] == cliente), {})
     try:
         pct_ficha = float(ficha.get("Pct_Venta") or 0)
@@ -137,6 +139,8 @@ def pdf_empresa(cliente: str, mes: str) -> bytes:
 
     pdf.ln(4)
     _tabla(pdf, [45, 40], ["TOTAL FACTURADO (Bs)", f"{total_nominal:,.2f}"], "total")
+    _tabla(pdf, [45, 40], ["TOTAL COMPRAS (Bs)", f"{total_compra:,.2f}"], "total")
+    _tabla(pdf, [45, 40], ["UTILIDAD (Bs)", f"{utilidad:,.2f}"], "total")
     _tabla(pdf, [45, 40], ["TOTAL A COBRAR (Bs)", f"{total_cobrar:,.2f}"], "total")
     _tabla(pdf, [45, 40], ["COBRADO (Bs)", f"{total_cobrado:,.2f}"])
     _tabla(pdf, [45, 40], ["SALDO (Bs)", f"{saldo:,.2f}"], "total")
