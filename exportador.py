@@ -24,8 +24,11 @@ def _estilar_hoja(ws, fila_header: int = 1, titulo: str = "") -> None:
     max_row = ws.max_row
 
     if titulo and fila_header >= 2:
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_col)
         celda = ws.cell(row=1, column=1)
-        celda.font = Font(bold=True, size=12, color="175E3B")
+        celda.font = Font(bold=True, size=13, color="175E3B")
+        celda.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 24
 
     for j in range(1, max_col + 1):
         celda = ws.cell(row=fila_header, column=j)
@@ -139,7 +142,7 @@ def exportar_reportes_mes(mes: str, incluir_todos: bool = False) -> tuple[bytes,
     buffer = io.BytesIO()
     nombre = f"control {mes}.xlsx"
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        titulo = f"resumen de costos y ganancia - {mes}"
+        titulo = f"RESUMEN DE COSTOS Y GANANCIA - {mes.upper()}"
         hoja = writer.book.create_sheet(title="COSTOS Y GANANCIA")
         hoja.append([titulo])
         hoja.append(
@@ -166,7 +169,7 @@ def exportar_reportes_mes(mes: str, incluir_todos: bool = False) -> tuple[bytes,
         hoja.append(["TOTALES", "", tot_fac, "", tot_compra, "", tot_venta, tot_util, ""])
 
         hoja2 = writer.book.create_sheet(title="VENTAS")
-        hoja2.append([f"ventas resumen - {mes}"])
+        hoja2.append([f"VENTAS RESUMEN - {mes.upper()}"])
         hoja2.append(
             ["#", "nombre", "rubro", "monto", "cobrar", "%", "prov.", "entregado", "cobrado", "saldo", "estado"]
         )

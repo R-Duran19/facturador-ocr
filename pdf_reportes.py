@@ -14,8 +14,9 @@ __all__ = ["pdf_empresa", "pdf_resumen_mes", "pdfs_por_empresa_zip"]
 
 _VERDE_TITULO = (216, 232, 222)
 _VERDE_TITULO_TEXTO = (27, 67, 50)
-_HEADER_FILL = (226, 238, 230)
-_HEADER_TEXT = (27, 67, 50)
+_VERDE_SECCION = (58, 110, 82)
+_HEADER_FILL = (255, 242, 204)
+_HEADER_TEXT = (120, 84, 6)
 _ZEBRA = (250, 252, 250)
 
 
@@ -26,11 +27,22 @@ def _pdf_base(titulo: str) -> FPDF:
     pdf.set_fill_color(*_VERDE_TITULO)
     pdf.set_text_color(*_VERDE_TITULO_TEXTO)
     pdf.set_font("helvetica", "B", 12)
-    pdf.cell(0, 10, titulo, new_x="LMARGIN", new_y="NEXT", fill=True)
+    pdf.cell(0, 10, titulo, new_x="LMARGIN", new_y="NEXT", align="C", fill=True)
     pdf.set_text_color(0, 0, 0)
     pdf.set_font("helvetica", "", 8)
     pdf.ln(2)
     return pdf
+
+
+def _titulo_seccion(pdf: FPDF, texto: str) -> None:
+    pdf.ln(1)
+    pdf.set_fill_color(*_VERDE_SECCION)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("helvetica", "B", 12)
+    pdf.cell(0, 9, texto, new_x="LMARGIN", new_y="NEXT", align="C", fill=True)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("helvetica", "", 8)
+    pdf.ln(1)
 
 
 def _tabla_datos(pdf: FPDF, anchos: list, encabezados: list, filas: list, alineados) -> None:
@@ -153,8 +165,8 @@ def pdf_resumen_mes(mes: str) -> bytes:
     filas_v = reportes.resumen_ventas_cliente(mes)
 
     pdf = _pdf_base(f"CONTROL MENSUAL - {_limpia(mes)}")
-    pdf.set_font("helvetica", "B", 12)
-    pdf.cell(0, 8, "Resumen de costos y ganancia", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(1)
+    _titulo_seccion(pdf, "Resumen de costos y ganancia")
     pdf.ln(1)
 
     filas_costos = [
@@ -191,9 +203,8 @@ def pdf_resumen_mes(mes: str) -> bytes:
         ("LEFT", "LEFT", "RIGHT", "RIGHT", "RIGHT", "RIGHT", "RIGHT", "RIGHT"),
     )
 
-    pdf.ln(6)
-    pdf.set_font("helvetica", "B", 12)
-    pdf.cell(0, 8, "Ventas resumen por cliente", new_x="LMARGIN", new_y="NEXT")
+    pdf.add_page()
+    _titulo_seccion(pdf, "Ventas resumen por cliente")
     pdf.ln(1)
 
     filas_ventas = [
