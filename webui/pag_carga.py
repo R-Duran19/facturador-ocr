@@ -123,6 +123,10 @@ document.addEventListener('click', function (ev) {
         ui.button("＋ Nuevo mes", icon="calendar_month", on_click=lambda: _dialogo_nuevo_mes()).props("flat dense").tooltip(
             "Crear un mes para registrar facturas"
         )
+        ui.space()
+        ui.button("➕ Factura manual", icon="post_add", on_click=_factura_manual).props("flat dense").tooltip(
+            "Registrar una factura a mano (sin IA), en el mes seleccionado"
+        )
     ui.label(f"📍 Estamos en: {_legible(mes_hoy)} · Mes seleccionado: {_legible(sel_mes.value or '')}").classes(
         "text-xs opacity-60 -mt-2"
     )
@@ -277,6 +281,7 @@ document.addEventListener('click', function (ev) {
         def _ejecutar():
             COLA.agregar_lote(mes, proveedor, list(archivos), pct)
             estado_archivos["archivos"] = []
+            subidor.reset()
             pintar_pend()
             pintar_lotes.refresh()
             ui.notify(f"Lote de {proveedor} procesando. Elegí otro proveedor y repetí.", type="positive")
@@ -307,13 +312,6 @@ document.addEventListener('click', function (ev) {
             ).props("unelevated dense no-caps color=primary").tooltip(
                 "Procesa los archivos subidos con la IA"
             )
-            ui.button(
-                "➕ Carga manual",
-                icon="post_add",
-                on_click=_factura_manual,
-            ).props("outline dense no-caps").tooltip(
-                "Registrar una factura a mano (sin IA), en el mes seleccionado"
-            )
 
         cont_pend = ui.column().classes("w-full gap-2")
 
@@ -336,7 +334,7 @@ document.addEventListener('click', function (ev) {
                         "text-xs opacity-50"
                     )
 
-        ui.upload(
+        subidor = ui.upload(
             multiple=True,
             auto_upload=True,
             on_upload=_recibir_archivo,

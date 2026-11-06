@@ -1,11 +1,33 @@
 """Punto de entrada de la interfaz NiceGUI."""
 
 import asyncio
+import logging
 import os
 import sys
 
 if sys.platform.startswith("win"):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+class _FiltroRuidoJS(logging.Filter):
+    """Silencia el ruido inofensivo de NiceGUI: al cerrar/refrescar una pestaña el
+    drawer intenta leer su estado por JavaScript y el navegador ya no responde.
+    No afecta datos ni funcionamiento, solo ensuciaba la consola."""
+
+    def filter(self, record):
+        try:
+            if "JavaScript did not respond" in record.getMessage():
+                return False
+            exc = record.exc_info[1] if record.exc_info else None
+            if exc is not None and "JavaScript did not respond" in f"{type(exc).__name__}: {exc}":
+                return False
+        except Exception:
+            pass
+        return True
+
+
+for _nombre in ("", "nicegui", "nicegui.background_tasks", "nicegui.elements.drawer"):
+    logging.getLogger(_nombre).addFilter(_FiltroRuidoJS())
 
 from nicegui import app, ui
 
